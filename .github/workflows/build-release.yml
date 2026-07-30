@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: room-switcher-tray-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   APP_VERSION: 0.1.0
   PROJECT: src/RoomSwitcherTray/RoomSwitcherTray.csproj
