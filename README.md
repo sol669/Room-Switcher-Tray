@@ -3,7 +3,7 @@
 Room Switcher Tray is a native Windows 10/11 tray utility for switching a
 complete display and audio setup with one click.
 
-The project is an early working version (`0.1.0`). It supports:
+The project is an early working version (`0.1.1`). It supports:
 
 - user-defined scenarios;
 - stable display and Core Audio endpoint identifiers;
