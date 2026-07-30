@@ -19,20 +19,25 @@ public sealed partial class SettingsWindow : Window
     private IReadOnlyList<AudioDevice> _audioDevices = [];
     private Scenario? _editing;
     private bool _isNew;
-    private bool _loading;
+    // XAML can raise SelectionChanged while InitializeComponent is still
+    // constructing ComboBox items. Ignore every UI event until the window and
+    // its dependencies are fully initialized.
+    private bool _loading = true;
 
     public SettingsWindow(SettingsStore store, TrayService tray)
     {
-        InitializeComponent();
         _store = store;
         _tray = tray;
+        InitializeComponent();
         ConfigureWindow();
         LoadDevices();
         ReloadScenarioList();
+        _loading = true;
         ThemeCombo.SelectedIndex = (int)_store.Current.Theme;
         LanguageCombo.SelectedIndex = _store.Current.Language == AppLanguage.Russian ? 0 : 1;
         ApplyTheme();
         ApplyLanguage();
+        _loading = false;
 
         if (_store.Current.Scenarios.Count > 0)
             ScenarioList.SelectedIndex = 0;
