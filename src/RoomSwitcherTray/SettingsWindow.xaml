@@ -77,7 +77,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="Room Switcher Tray 0.1.0" FontWeight="SemiBold" />
+                    <TextBlock Text="Room Switcher Tray 0.1.1" FontWeight="SemiBold" />
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock x:Name="AuthorText" Text="Автор: sol669 ·" Opacity="0.68" />
                         <HyperlinkButton Content="GitHub" Padding="0"
