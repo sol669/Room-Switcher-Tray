@@ -195,9 +195,22 @@ public sealed class TrayService : IDisposable
             return;
         }
 
-        _settingsWindow = new SettingsWindow(_settings, this);
-        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        _settingsWindow.Activate();
+        try
+        {
+            _settingsWindow = new SettingsWindow(_settings, this);
+            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+            _settingsWindow.Activate();
+        }
+        catch (Exception ex)
+        {
+            _settingsWindow = null;
+            SettingsStore.Log(ex);
+            ShowNotification(
+                Strings.Ru
+                    ? "Не удалось открыть настройки. Подробности записаны в error.log."
+                    : "Could not open Settings. Details were written to error.log.",
+                false);
+        }
     }
 
     internal void Refresh()
