@@ -1,0 +1,101 @@
+<Window
+    x:Class="RoomSwitcherTray.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Room Switcher Tray">
+
+    <Grid x:Name="RootGrid" Padding="20" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="22">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="230" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Button x:Name="CreateButton" HorizontalAlignment="Stretch"
+                        Click="CreateButton_Click" Content="+ Создать сценарий" />
+                <ListView x:Name="ScenarioList" Grid.Row="1" Margin="0,12,0,0"
+                          SelectionChanged="ScenarioList_SelectionChanged" />
+            </Grid>
+
+            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="EditorPanel" Spacing="10">
+                    <TextBlock x:Name="EditorTitle" Text="Редактор сценария"
+                               FontSize="24" FontWeight="SemiBold" />
+                    <InfoBar x:Name="InfoMessage" IsOpen="False" IsClosable="True" />
+
+                    <TextBlock x:Name="NameLabel" Text="Название" FontWeight="SemiBold" />
+                    <TextBox x:Name="NameBox" />
+
+                    <TextBlock x:Name="DisplaysLabel" Text="Экраны" FontWeight="SemiBold"
+                               Margin="0,6,0,0" />
+                    <StackPanel x:Name="DisplaysPanel" Spacing="4" />
+
+                    <TextBlock x:Name="PrimaryLabel" Text="Основной экран" FontWeight="SemiBold"
+                               Margin="0,6,0,0" />
+                    <ComboBox x:Name="PrimaryCombo" HorizontalAlignment="Stretch" />
+
+                    <TextBlock x:Name="AudioLabel" Text="Звук" FontWeight="SemiBold"
+                               Margin="0,6,0,0" />
+                    <ComboBox x:Name="AudioCombo" HorizontalAlignment="Stretch" />
+
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                        <Button x:Name="SaveButton" Content="Сохранить"
+                                Click="SaveButton_Click" />
+                        <Button x:Name="SaveApplyButton" Content="Сохранить и применить"
+                                Click="SaveApplyButton_Click" />
+                        <Button x:Name="CancelButton" Content="Отмена"
+                                Click="CancelButton_Click" />
+                    </StackPanel>
+
+                    <Button x:Name="DeleteButton" Content="Удалить сценарий"
+                            HorizontalAlignment="Left" Margin="0,8,0,0"
+                            Click="DeleteButton_Click" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <Border Grid.Row="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1" CornerRadius="8" Padding="12">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Room Switcher Tray 0.1.0" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock x:Name="AuthorText" Text="Автор: sol669 ·" Opacity="0.68" />
+                        <HyperlinkButton Content="GitHub" Padding="0"
+                            NavigateUri="https://github.com/sol669/Room-Switcher-Tray" />
+                    </StackPanel>
+                </StackPanel>
+                <ComboBox x:Name="ThemeCombo" Grid.Column="1" Width="135"
+                          SelectionChanged="ThemeCombo_SelectionChanged">
+                    <ComboBoxItem x:Name="SystemThemeItem" Content="Системная" />
+                    <ComboBoxItem x:Name="LightThemeItem" Content="Светлая" />
+                    <ComboBoxItem x:Name="DarkThemeItem" Content="Тёмная" />
+                </ComboBox>
+                <ComboBox x:Name="LanguageCombo" Grid.Column="2" Width="110"
+                          SelectionChanged="LanguageCombo_SelectionChanged">
+                    <ComboBoxItem Content="Русский" />
+                    <ComboBoxItem Content="English" />
+                </ComboBox>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
