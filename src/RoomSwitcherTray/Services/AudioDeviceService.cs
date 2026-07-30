@@ -8,7 +8,8 @@ public sealed class AudioDeviceService
     public IReadOnlyList<AudioDevice> GetRenderDevices()
     {
         var result = new List<AudioDevice>();
-        IMMDeviceEnumerator enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+        IMMDeviceEnumerator enumerator =
+            (IMMDeviceEnumerator)(object)new MMDeviceEnumeratorComObject();
         enumerator.EnumAudioEndpoints(EDataFlow.eRender, DeviceState.Active, out IMMDeviceCollection collection);
         enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eConsole, out IMMDevice defaultDevice);
         defaultDevice.GetId(out string defaultId);
@@ -34,7 +35,7 @@ public sealed class AudioDeviceService
         error = null;
         try
         {
-            IPolicyConfig policy = (IPolicyConfig)new PolicyConfigClient();
+            IPolicyConfig policy = (IPolicyConfig)(object)new PolicyConfigClient();
             foreach (ERole role in Enum.GetValues<ERole>())
             {
                 int hr = policy.SetDefaultEndpoint(deviceId, role);
