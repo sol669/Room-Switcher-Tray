@@ -1,0 +1,89 @@
+name: Build Windows release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP_VERSION: 0.1.0
+  PROJECT: src/RoomSwitcherTray/RoomSwitcherTray.csproj
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore $env:PROJECT -r win-x64
+
+      - name: Publish framework-dependent app
+        run: >
+          dotnet publish $env:PROJECT
+          -c Release -r win-x64 --self-contained false
+          -p:Platform=x64
+          -p:WindowsAppSDKSelfContained=false
+          -o publish
+
+      - name: Create standard portable ZIP
+        shell: pwsh
+        run: |
+          Copy-Item installer\README-Portable.txt publish\README-Portable.txt
+          Compress-Archive -Path publish\* -DestinationPath Room-Switcher-Tray-Portable-win-x64.zip -CompressionLevel Optimal
+
+      - name: Publish self-contained app
+        run: >
+          dotnet publish $env:PROJECT
+          -c Release -r win-x64 --self-contained true
+          -p:Platform=x64
+          -p:WindowsAppSDKSelfContained=true
+          -o publish-self-contained
+
+      - name: Create self-contained portable ZIP
+        shell: pwsh
+        run: Compress-Archive -Path publish-self-contained\* -DestinationPath Room-Switcher-Tray-Portable-Self-Contained-win-x64.zip -CompressionLevel Optimal
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installers
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=$env:APP_VERSION "/DPublishDir=${{ github.workspace }}\publish" "${{ github.workspace }}\installer\RoomSwitcherTray-Standard.iss"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=$env:APP_VERSION "/DPublishDir=${{ github.workspace }}\publish-self-contained" "${{ github.workspace }}\installer\RoomSwitcherTray.iss"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Room-Switcher-Tray-win-x64
+          path: |
+            Room-Switcher-Tray-Portable-win-x64.zip
+            Room-Switcher-Tray-Portable-Self-Contained-win-x64.zip
+            release/Room-Switcher-Tray-Setup-v${{ env.APP_VERSION }}.exe
+            release/Room-Switcher-Tray-Setup-Self-Contained-v${{ env.APP_VERSION }}.exe
+          if-no-files-found: error
+
+      - name: Add files to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Room-Switcher-Tray-Portable-win-x64.zip
+            Room-Switcher-Tray-Portable-Self-Contained-win-x64.zip
+            release/Room-Switcher-Tray-Setup-v${{ env.APP_VERSION }}.exe
+            release/Room-Switcher-Tray-Setup-Self-Contained-v${{ env.APP_VERSION }}.exe
+          fail_on_unmatched_files: true
+          overwrite_files: true
