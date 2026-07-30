@@ -19,7 +19,7 @@ public sealed class TrayService : IDisposable
     private readonly SettingsStore _settings;
     private readonly ScenarioService _scenarios;
     private readonly NativeMethods.WndProc _windowProc;
-    private readonly DispatcherQueue _dispatcher;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher;
     private nint _window;
     private NativeMethods.NOTIFYICONDATA _notifyData;
     private SettingsWindow? _settingsWindow;
@@ -30,7 +30,7 @@ public sealed class TrayService : IDisposable
         _settings = settings;
         _scenarios = scenarios;
         _windowProc = WindowProc;
-        _dispatcher = DispatcherQueue.GetForCurrentThread();
+        _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
     }
 
     public void Initialize()
