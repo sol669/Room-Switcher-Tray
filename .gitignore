@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+publish/
+publish-self-contained/
+release/
+.dotnet/
+*.user
+*.suo
+*.log
