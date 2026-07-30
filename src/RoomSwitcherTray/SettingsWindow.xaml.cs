@@ -28,7 +28,11 @@ public sealed partial class SettingsWindow : Window
     {
         _store = store;
         _tray = tray;
-        InitializeComponent();
+        // The unpackaged self-contained build can fail while loading compiled
+        // XAML on some Windows configurations. Build this small settings window
+        // with the same native WinUI controls so startup does not depend on the
+        // XAML resource loader.
+        BuildLayout();
         ConfigureWindow();
         LoadDevices();
         ReloadScenarioList();
@@ -43,6 +47,168 @@ public sealed partial class SettingsWindow : Window
             ScenarioList.SelectedIndex = 0;
         else
             BeginCreate();
+    }
+
+    private void BuildLayout()
+    {
+        Title = "Room Switcher Tray";
+
+        RootGrid = new Grid
+        {
+            Padding = new Thickness(20),
+            RowSpacing = 12
+        };
+        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var contentGrid = new Grid { ColumnSpacing = 22 };
+        contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) });
+        contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var scenarioGrid = new Grid();
+        scenarioGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        scenarioGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        CreateButton = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Content = "+ Create scenario"
+        };
+        CreateButton.Click += CreateButton_Click;
+        scenarioGrid.Children.Add(CreateButton);
+
+        ScenarioList = new ListView { Margin = new Thickness(0, 12, 0, 0) };
+        ScenarioList.SelectionChanged += ScenarioList_SelectionChanged;
+        Grid.SetRow(ScenarioList, 1);
+        scenarioGrid.Children.Add(ScenarioList);
+        contentGrid.Children.Add(scenarioGrid);
+
+        EditorPanel = new StackPanel { Spacing = 10 };
+        EditorTitle = new TextBlock
+        {
+            Text = "Scenario editor",
+            FontSize = 24,
+            FontWeight = Windows.UI.Text.FontWeights.SemiBold
+        };
+        EditorPanel.Children.Add(EditorTitle);
+
+        InfoMessage = new InfoBar { IsOpen = false, IsClosable = true };
+        EditorPanel.Children.Add(InfoMessage);
+
+        NameLabel = AddLabel(EditorPanel, "Name");
+        NameBox = new TextBox();
+        EditorPanel.Children.Add(NameBox);
+
+        DisplaysLabel = AddLabel(EditorPanel, "Displays", true);
+        DisplaysPanel = new StackPanel { Spacing = 4 };
+        EditorPanel.Children.Add(DisplaysPanel);
+
+        PrimaryLabel = AddLabel(EditorPanel, "Primary display", true);
+        PrimaryCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+        EditorPanel.Children.Add(PrimaryCombo);
+
+        AudioLabel = AddLabel(EditorPanel, "Audio", true);
+        AudioCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+        EditorPanel.Children.Add(AudioCombo);
+
+        var actionPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+        SaveButton = new Button { Content = "Save" };
+        SaveButton.Click += SaveButton_Click;
+        actionPanel.Children.Add(SaveButton);
+        SaveApplyButton = new Button { Content = "Save and apply" };
+        SaveApplyButton.Click += SaveApplyButton_Click;
+        actionPanel.Children.Add(SaveApplyButton);
+        CancelButton = new Button { Content = "Cancel" };
+        CancelButton.Click += CancelButton_Click;
+        actionPanel.Children.Add(CancelButton);
+        EditorPanel.Children.Add(actionPanel);
+
+        DeleteButton = new Button
+        {
+            Content = "Delete scenario",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        DeleteButton.Click += DeleteButton_Click;
+        EditorPanel.Children.Add(DeleteButton);
+
+        var editorScroll = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = EditorPanel
+        };
+        Grid.SetColumn(editorScroll, 1);
+        contentGrid.Children.Add(editorScroll);
+        RootGrid.Children.Add(contentGrid);
+
+        var footer = new Border
+        {
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12)
+        };
+        var footerGrid = new Grid { ColumnSpacing = 12 };
+        footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var aboutPanel = new StackPanel();
+        aboutPanel.Children.Add(new TextBlock
+        {
+            Text = "Room Switcher Tray 0.1.2",
+            FontWeight = Windows.UI.Text.FontWeights.SemiBold
+        });
+        var authorPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        AuthorText = new TextBlock { Text = "Author: sol669 ·", Opacity = 0.68 };
+        authorPanel.Children.Add(AuthorText);
+        authorPanel.Children.Add(new HyperlinkButton
+        {
+            Content = "GitHub",
+            Padding = new Thickness(0),
+            NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray")
+        });
+        aboutPanel.Children.Add(authorPanel);
+        footerGrid.Children.Add(aboutPanel);
+
+        ThemeCombo = new ComboBox { Width = 135 };
+        SystemThemeItem = new ComboBoxItem { Content = "System" };
+        LightThemeItem = new ComboBoxItem { Content = "Light" };
+        DarkThemeItem = new ComboBoxItem { Content = "Dark" };
+        ThemeCombo.Items.Add(SystemThemeItem);
+        ThemeCombo.Items.Add(LightThemeItem);
+        ThemeCombo.Items.Add(DarkThemeItem);
+        ThemeCombo.SelectionChanged += ThemeCombo_SelectionChanged;
+        Grid.SetColumn(ThemeCombo, 1);
+        footerGrid.Children.Add(ThemeCombo);
+
+        LanguageCombo = new ComboBox { Width = 110 };
+        LanguageCombo.Items.Add(new ComboBoxItem { Content = "Русский" });
+        LanguageCombo.Items.Add(new ComboBoxItem { Content = "English" });
+        LanguageCombo.SelectionChanged += LanguageCombo_SelectionChanged;
+        Grid.SetColumn(LanguageCombo, 2);
+        footerGrid.Children.Add(LanguageCombo);
+
+        footer.Child = footerGrid;
+        Grid.SetRow(footer, 1);
+        RootGrid.Children.Add(footer);
+        Content = RootGrid;
+    }
+
+    private static TextBlock AddLabel(StackPanel panel, string text, bool topMargin = false)
+    {
+        var label = new TextBlock
+        {
+            Text = text,
+            FontWeight = Windows.UI.Text.FontWeights.SemiBold,
+            Margin = topMargin ? new Thickness(0, 6, 0, 0) : new Thickness(0)
+        };
+        panel.Children.Add(label);
+        return label;
     }
 
     private void ConfigureWindow()
