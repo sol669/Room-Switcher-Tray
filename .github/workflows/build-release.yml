@@ -2,7 +2,7 @@ name: Build Windows release
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/room-switcher-0.2.0]
     tags: ['v*']
   workflow_dispatch:
 
@@ -45,7 +45,7 @@ jobs:
       - name: Create standard portable ZIP
         shell: pwsh
         run: |
-              branches: [main, codex/room-switcher-0.2.0]Copy-Item installer\README-Portable.txt publish\README-Portable.txtbranches: [main, codex/room-switcher-0.2.0]
+          Copy-Item installer\README-Portable.txt publish\README-Portable.txt
           Compress-Archive -Path publish\* -DestinationPath Room-Switcher-Tray-Portable-win-x64.zip -CompressionLevel Optimal
 
       - name: Publish self-contained app
