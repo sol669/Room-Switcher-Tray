@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  APP_VERSION: 0.1.1
+  APP_VERSION: 0.2.0
   PROJECT: src/RoomSwitcherTray/RoomSwitcherTray.csproj
 
 jobs:
@@ -91,3 +91,4 @@ jobs:
             release/Room-Switcher-Tray-Setup-Self-Contained-v${{ env.APP_VERSION }}.exe
           fail_on_unmatched_files: true
           overwrite_files: true
+
