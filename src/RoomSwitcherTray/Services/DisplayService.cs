@@ -22,8 +22,16 @@ public sealed class DisplayService
             string name = GetFriendlyName(path.targetInfo.adapterId, path.targetInfo.id);
             bool active = (path.flags & NativeMethods.DISPLAYCONFIG_PATH_ACTIVE) != 0;
             bool primary = active && IsPrimary(path, modes);
+            (uint width, uint height) = GetResolution(path, modes);
+            double refreshRate = path.targetInfo.refreshRate.Denominator == 0
+                ? 0
+                : (double)path.targetInfo.refreshRate.Numerator /
+                  path.targetInfo.refreshRate.Denominator;
+            (bool hdrSupported, bool hdrEnabled) = GetHdrState(
+                path.targetInfo.adapterId, path.targetInfo.id);
             result[id] = new DisplayDevice(id, name, true, active, primary,
-                path.targetInfo.adapterId.ToInt64(), path.targetInfo.id);
+                path.targetInfo.adapterId.ToInt64(), path.targetInfo.id,
+                width, height, refreshRate, hdrSupported, hdrEnabled);
         }
 
         return result.Values
@@ -31,6 +39,24 @@ public sealed class DisplayService
             .ThenByDescending(d => d.IsActive)
             .ThenBy(d => d.Name)
             .ToList();
+    }
+
+    public void SetHdr(DisplayDevice display, bool enabled)
+    {
+        if (!display.HdrSupported)
+            throw new InvalidOperationException("HDR is not supported by this display.");
+
+        var request = new NativeMethods.DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE
+        {
+            header = NativeMethods.DeviceInfoHeader(
+                NativeMethods.DISPLAYCONFIG_DEVICE_INFO_TYPE.SetAdvancedColorState,
+                Marshal.SizeOf<NativeMethods.DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE>(),
+                new NativeMethods.LUID(display.AdapterId), display.TargetId),
+            value = enabled ? 1u : 0u
+        };
+        int error = NativeMethods.DisplayConfigSetDeviceInfo(ref request);
+        if (error != 0)
+            throw new Win32Exception(error);
     }
 
     public void Apply(IReadOnlyCollection<string> selectedIds, string primaryId)
@@ -142,6 +168,34 @@ public sealed class DisplayService
                mode.sourceMode.position.x == 0 && mode.sourceMode.position.y == 0;
     }
 
+    private static (uint Width, uint Height) GetResolution(
+        NativeMethods.DISPLAYCONFIG_PATH_INFO path,
+        NativeMethods.DISPLAYCONFIG_MODE_INFO[] modes)
+    {
+        uint index = path.sourceInfo.modeInfoIdx;
+        if (index == NativeMethods.DISPLAYCONFIG_PATH_MODE_IDX_INVALID || index >= (uint)modes.Length)
+            return (0, 0);
+        NativeMethods.DISPLAYCONFIG_MODE_INFO mode = modes[index];
+        return mode.infoType == NativeMethods.DISPLAYCONFIG_MODE_INFO_TYPE.Source
+            ? (mode.sourceMode.width, mode.sourceMode.height)
+            : (0, 0);
+    }
+
+    private static (bool Supported, bool Enabled) GetHdrState(
+        NativeMethods.LUID adapterId, uint targetId)
+    {
+        var request = new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO
+        {
+            header = NativeMethods.DeviceInfoHeader(
+                NativeMethods.DISPLAYCONFIG_DEVICE_INFO_TYPE.GetAdvancedColorInfo,
+                Marshal.SizeOf<NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>(),
+                adapterId, targetId)
+        };
+        return NativeMethods.DisplayConfigGetDeviceInfo(ref request) == 0
+            ? (request.AdvancedColorSupported, request.AdvancedColorEnabled)
+            : (false, false);
+    }
+
     private static string GetFriendlyName(NativeMethods.LUID adapterId, uint targetId)
     {
         var name = new NativeMethods.DISPLAYCONFIG_TARGET_DEVICE_NAME
@@ -180,3 +234,4 @@ public sealed class DisplayService
         return NativeMethods.DisplayConfigGetDeviceInfo(ref source) == 0 ? source.viewGdiDeviceName : string.Empty;
     }
 }
+
