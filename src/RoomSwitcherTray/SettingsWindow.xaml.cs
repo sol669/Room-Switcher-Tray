@@ -88,7 +88,7 @@ public sealed partial class SettingsWindow : Window
         {
             Text = "Scenario editor",
             FontSize = 24,
-            FontWeight = Windows.UI.Text.FontWeights.SemiBold
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         };
         EditorPanel.Children.Add(EditorTitle);
 
@@ -161,7 +161,7 @@ public sealed partial class SettingsWindow : Window
         aboutPanel.Children.Add(new TextBlock
         {
             Text = "Room Switcher Tray 0.1.2",
-            FontWeight = Windows.UI.Text.FontWeights.SemiBold
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         });
         var authorPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         AuthorText = new TextBlock { Text = "Author: sol669 ·", Opacity = 0.68 };
@@ -204,7 +204,7 @@ public sealed partial class SettingsWindow : Window
         var label = new TextBlock
         {
             Text = text,
-            FontWeight = Windows.UI.Text.FontWeights.SemiBold,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Margin = topMargin ? new Thickness(0, 6, 0, 0) : new Thickness(0)
         };
         panel.Children.Add(label);
