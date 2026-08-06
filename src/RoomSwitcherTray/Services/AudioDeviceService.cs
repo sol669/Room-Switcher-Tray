@@ -12,7 +12,7 @@ public sealed class AudioDeviceService
         using NAudio.CoreAudioApi.MMDevice defaultDevice =
             enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
         string defaultId = defaultDevice.ID;
-        using MMDeviceCollection collection = enumerator.EnumerateAudioEndPoints(
+        MMDeviceCollection collection = enumerator.EnumerateAudioEndPoints(
             DataFlow.Render, NAudio.CoreAudioApi.DeviceState.Active);
         var result = new List<AudioDevice>(collection.Count);
 
