@@ -252,3 +252,4 @@ internal static class NativeMethods
     [DllImport("user32.dll")] internal static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO request);
     [DllImport("user32.dll")] internal static extern int DisplayConfigSetDeviceInfo(ref DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE request);
 }
+
