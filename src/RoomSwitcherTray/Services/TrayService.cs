@@ -1,4 +1,3 @@
-using Microsoft.UI.Dispatching;
 using RoomSwitcherTray.Interop;
 using RoomSwitcherTray.Models;
 using System.Runtime.InteropServices;
@@ -9,21 +8,27 @@ namespace RoomSwitcherTray.Services;
 public sealed class TrayService : IDisposable
 {
     private const uint TrayMessage = NativeMethods.WM_APP + 1;
-    private const uint ScenarioCommandBase = 2000;
+    private const uint IdNextScenario = 1000;
     private const uint IdMonitorOff = 1001;
-    private const uint IdHdr = 1002;
     private const uint IdDisplaySettings = 1003;
     private const uint IdSettings = 1004;
     private const uint IdExit = 1005;
+    private const uint ScenarioCommandBase = 2000;
+    private const uint DisplayCommandBase = 3000;
+    private const uint AudioCommandBase = 4000;
 
     private readonly SettingsStore _settings;
     private readonly ScenarioService _scenarios;
     private readonly NativeMethods.WndProc _windowProc;
     private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher;
     private nint _window;
+    private nint _trayIcon;
     private NativeMethods.NOTIFYICONDATA _notifyData;
     private SettingsWindow? _settingsWindow;
     private IReadOnlyList<Scenario> _menuScenarios = [];
+    private IReadOnlyList<DisplayDevice> _menuDisplays = [];
+    private IReadOnlyList<AudioDevice> _menuAudioDevices = [];
+    private Scenario? _nextScenario;
 
     public TrayService(SettingsStore settings, ScenarioService scenarios)
     {
@@ -48,6 +53,7 @@ public sealed class TrayService : IDisposable
         _window = NativeMethods.CreateWindowEx(0, className, "Room Switcher Tray", 0,
             0, 0, 0, 0, nint.Zero, nint.Zero, instance, nint.Zero);
 
+        _trayIcon = CreateCurrentIcon();
         _notifyData = new NativeMethods.NOTIFYICONDATA
         {
             cbSize = (uint)Marshal.SizeOf<NativeMethods.NOTIFYICONDATA>(),
@@ -55,7 +61,7 @@ public sealed class TrayService : IDisposable
             uID = 1,
             uFlags = NativeMethods.NIF_MESSAGE | NativeMethods.NIF_ICON | NativeMethods.NIF_TIP,
             uCallbackMessage = TrayMessage,
-            hIcon = NativeMethods.LoadIcon(nint.Zero, new nint(32512)),
+            hIcon = _trayIcon,
             szTip = BuildTooltip(),
             szInfo = string.Empty,
             szInfoTitle = string.Empty
@@ -88,35 +94,87 @@ public sealed class TrayService : IDisposable
     {
         NativeTheme.Apply(_settings.Current.Theme, _window);
         nint menu = NativeMethods.CreatePopupMenu();
-        nint scenariosMenu = NativeMethods.CreatePopupMenu();
         _menuScenarios = _settings.Current.Scenarios.ToList();
+        _menuDisplays = App.Displays.GetDisplays().Where(d => d.IsActive).ToList();
+        IReadOnlyList<AudioDevice> audioDevices = App.Audio.GetRenderDevices();
+        AudioDevice? currentAudio = audioDevices.FirstOrDefault(d => d.IsDefault);
+        _menuAudioDevices = audioDevices.Where(d => !d.IsDefault).ToList();
+        _nextScenario = GetNextScenario();
 
         try
         {
-            if (_menuScenarios.Count == 0)
+            if (_nextScenario is not null)
             {
-                NativeMethods.AppendMenu(scenariosMenu, NativeMethods.MF_STRING, 0,
-                    Strings.Ru ? "(нет сценариев)" : "(no scenarios)");
+                NativeMethods.AppendMenu(menu,
+                    NativeMethods.MF_STRING | NativeMethods.MF_DEFAULT,
+                    IdNextScenario, Strings.SwitchTo(_nextScenario.Name));
             }
             else
             {
-                for (int i = 0; i < _menuScenarios.Count; i++)
+                NativeMethods.AppendMenu(menu,
+                    NativeMethods.MF_STRING | NativeMethods.MF_GRAYED,
+                    0, Strings.NoScenarios);
+            }
+
+            for (int i = 0; i < _menuScenarios.Count; i++)
+            {
+                Scenario scenario = _menuScenarios[i];
+                if (_nextScenario?.Id == scenario.Id)
+                    continue;
+                uint flags = NativeMethods.MF_STRING;
+                if (_settings.Current.ActiveScenarioId == scenario.Id)
+                    flags |= NativeMethods.MF_CHECKED;
+                NativeMethods.AppendMenu(menu, flags,
+                    ScenarioCommandBase + (uint)i, scenario.Name);
+            }
+
+            NativeMethods.AppendMenu(menu, NativeMethods.MF_SEPARATOR, 0, null);
+
+            for (int i = 0; i < _menuDisplays.Count; i++)
+            {
+                DisplayDevice display = _menuDisplays[i];
+                string title = $"{_settings.DisplayName(display)}\t{FormatDisplayStatus(display)}";
+                if (display.HdrSupported)
                 {
-                    Scenario scenario = _menuScenarios[i];
-                    uint flags = NativeMethods.MF_STRING;
-                    if (_settings.Current.ActiveScenarioId == scenario.Id)
-                        flags |= NativeMethods.MF_CHECKED;
-                    NativeMethods.AppendMenu(scenariosMenu, flags,
-                        ScenarioCommandBase + (uint)i, scenario.Name);
+                    nint hdrMenu = NativeMethods.CreatePopupMenu();
+                    NativeMethods.AppendMenu(hdrMenu, NativeMethods.MF_STRING,
+                        DisplayCommandBase + (uint)i,
+                        display.HdrEnabled ? Strings.DisableHdr : Strings.EnableHdr);
+                    NativeMethods.AppendMenu(menu, NativeMethods.MF_POPUP,
+                        (nuint)hdrMenu, title);
+                }
+                else
+                {
+                    NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING, 0, title);
                 }
             }
 
-            NativeMethods.AppendMenu(menu, NativeMethods.MF_POPUP, (nuint)scenariosMenu, Strings.Scenarios);
+            if (currentAudio is not null)
+            {
+                string title = $"{_settings.AudioName(currentAudio)}\t{currentAudio.VolumePercent}%";
+                if (_menuAudioDevices.Count > 0)
+                {
+                    nint audioMenu = NativeMethods.CreatePopupMenu();
+                    for (int i = 0; i < _menuAudioDevices.Count; i++)
+                        NativeMethods.AppendMenu(audioMenu, NativeMethods.MF_STRING,
+                            AudioCommandBase + (uint)i,
+                            _settings.AudioName(_menuAudioDevices[i]));
+                    NativeMethods.AppendMenu(menu, NativeMethods.MF_POPUP,
+                        (nuint)audioMenu, title);
+                }
+                else
+                {
+                    NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING, 0, title);
+                }
+            }
+
             NativeMethods.AppendMenu(menu, NativeMethods.MF_SEPARATOR, 0, null);
-            NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING, IdMonitorOff, Strings.MonitorOff);
-            NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING, IdHdr, Strings.ToggleHdr);
-            NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING, IdDisplaySettings, Strings.DisplaySettings);
-            NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING, IdSettings, Strings.Settings);
+            NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING,
+                IdMonitorOff, Strings.MonitorOff);
+            NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING,
+                IdDisplaySettings, Strings.DisplaySettings);
+            NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING,
+                IdSettings, Strings.Settings);
             NativeMethods.AppendMenu(menu, NativeMethods.MF_SEPARATOR, 0, null);
             NativeMethods.AppendMenu(menu, NativeMethods.MF_STRING, IdExit, Strings.Exit);
 
@@ -130,17 +188,52 @@ public sealed class TrayService : IDisposable
         }
         finally
         {
-            NativeMethods.DestroyMenu(scenariosMenu);
             NativeMethods.DestroyMenu(menu);
         }
     }
 
     private void ExecuteCommand(uint command)
     {
+        if (command == 0)
+            return;
+
+        if (command == IdNextScenario && _nextScenario is not null)
+        {
+            _ = ApplyScenarioAsync(_nextScenario);
+            return;
+        }
+
         if (command >= ScenarioCommandBase &&
             command < ScenarioCommandBase + _menuScenarios.Count)
         {
             _ = ApplyScenarioAsync(_menuScenarios[(int)(command - ScenarioCommandBase)]);
+            return;
+        }
+
+        if (command >= DisplayCommandBase &&
+            command < DisplayCommandBase + _menuDisplays.Count)
+        {
+            DisplayDevice display = _menuDisplays[(int)(command - DisplayCommandBase)];
+            try
+            {
+                App.Displays.SetHdr(display, !display.HdrEnabled);
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                SettingsStore.Log(ex);
+                ShowNotification(ex.Message, false);
+            }
+            return;
+        }
+
+        if (command >= AudioCommandBase &&
+            command < AudioCommandBase + _menuAudioDevices.Count)
+        {
+            AudioDevice device = _menuAudioDevices[(int)(command - AudioCommandBase)];
+            if (!App.Audio.SetDefault(device.Id, out string? error))
+                ShowNotification($"{Strings.AudioSwitchFailed} {error}", false);
+            Refresh();
             return;
         }
 
@@ -149,9 +242,6 @@ public sealed class TrayService : IDisposable
             case IdMonitorOff:
                 NativeMethods.SendNotifyMessage(NativeMethods.HWND_BROADCAST,
                     NativeMethods.WM_SYSCOMMAND, NativeMethods.SC_MONITORPOWER, new nint(2));
-                break;
-            case IdHdr:
-                SendHdrShortcut();
                 break;
             case IdDisplaySettings:
                 _ = Launcher.LaunchUriAsync(new Uri("ms-settings:display"));
@@ -167,16 +257,22 @@ public sealed class TrayService : IDisposable
 
     private async void ApplyNextScenario()
     {
-        if (_settings.Current.Scenarios.Count == 0)
+        Scenario? next = GetNextScenario();
+        if (next is null)
         {
             ShowSettings();
             return;
         }
+        await ApplyScenarioAsync(next);
+    }
 
+    private Scenario? GetNextScenario()
+    {
+        if (_settings.Current.Scenarios.Count == 0)
+            return null;
         int current = _settings.Current.Scenarios.FindIndex(s =>
             s.Id == _settings.Current.ActiveScenarioId);
-        Scenario next = _settings.Current.Scenarios[(current + 1) % _settings.Current.Scenarios.Count];
-        await ApplyScenarioAsync(next);
+        return _settings.Current.Scenarios[(current + 1) % _settings.Current.Scenarios.Count];
     }
 
     internal async Task ApplyScenarioAsync(Scenario scenario)
@@ -205,19 +301,21 @@ public sealed class TrayService : IDisposable
         {
             _settingsWindow = null;
             SettingsStore.Log(ex);
-            ShowNotification(
-                Strings.Ru
-                    ? "Не удалось открыть настройки. Подробности записаны в error.log."
-                    : "Could not open Settings. Details were written to error.log.",
-                false);
+            ShowNotification(Strings.SettingsOpenFailed, false);
         }
     }
 
     internal void Refresh()
     {
-        _notifyData.uFlags = NativeMethods.NIF_TIP;
+        nint newIcon = CreateCurrentIcon();
+        nint oldIcon = _trayIcon;
+        _trayIcon = newIcon;
+        _notifyData.hIcon = newIcon;
+        _notifyData.uFlags = NativeMethods.NIF_TIP | NativeMethods.NIF_ICON;
         _notifyData.szTip = BuildTooltip();
         NativeMethods.Shell_NotifyIcon(NativeMethods.NIM_MODIFY, ref _notifyData);
+        if (oldIcon != nint.Zero)
+            NativeMethods.DestroyIcon(oldIcon);
     }
 
     internal void ShowNotification(string message, bool success)
@@ -233,17 +331,26 @@ public sealed class TrayService : IDisposable
     {
         string? activeName = _settings.Current.Scenarios.FirstOrDefault(s =>
             s.Id == _settings.Current.ActiveScenarioId)?.Name;
-        return activeName is null ? "Room Switcher Tray" : $"Room Switcher Tray — {activeName}";
+        Scenario? next = GetNextScenario();
+        if (activeName is null)
+            return "Room Switcher Tray";
+        return next is null
+            ? activeName
+            : $"{activeName}\n{Strings.DoubleClick}: {next.Name}";
     }
 
-    private static void SendHdrShortcut()
+    private static string FormatDisplayStatus(DisplayDevice display)
     {
-        NativeMethods.KeybdEvent(0x5B, 0, 0, 0);
-        NativeMethods.KeybdEvent(0x12, 0, 0, 0);
-        NativeMethods.KeybdEvent(0x42, 0, 0, 0);
-        NativeMethods.KeybdEvent(0x42, 0, NativeMethods.KEYEVENTF_KEYUP, 0);
-        NativeMethods.KeybdEvent(0x12, 0, NativeMethods.KEYEVENTF_KEYUP, 0);
-        NativeMethods.KeybdEvent(0x5B, 0, NativeMethods.KEYEVENTF_KEYUP, 0);
+        string hz = Strings.Ru ? "Гц" : "Hz";
+        return $"{display.Width}×{display.Height} · {Math.Round(display.RefreshRate):0} {hz} · " +
+               (display.HdrEnabled ? "HDR" : "SDR");
+    }
+
+    private nint CreateCurrentIcon()
+    {
+        string key = _settings.Current.Scenarios.FirstOrDefault(s =>
+            s.Id == _settings.Current.ActiveScenarioId)?.IconKey ?? "monitor";
+        return TrayIconFactory.Create(key);
     }
 
     public void Dispose()
@@ -254,5 +361,11 @@ public sealed class TrayService : IDisposable
             NativeMethods.DestroyWindow(_window);
             _window = nint.Zero;
         }
+        if (_trayIcon != nint.Zero)
+        {
+            NativeMethods.DestroyIcon(_trayIcon);
+            _trayIcon = nint.Zero;
+        }
     }
 }
+
