@@ -24,10 +24,30 @@ public sealed class AudioDeviceService
             store.GetValue(ref key, out PropVariant value);
             string name = value.GetString() ?? id;
             value.Clear();
-            result.Add(new AudioDevice(id, name, id == defaultId));
+            result.Add(new AudioDevice(id, name, id == defaultId, GetVolumePercent(device)));
         }
 
         return result.OrderByDescending(d => d.IsDefault).ThenBy(d => d.Name).ToList();
+    }
+
+    private static int GetVolumePercent(IMMDevice device)
+    {
+        try
+        {
+            Guid iid = typeof(IAudioEndpointVolume).GUID;
+            int hr = device.Activate(ref iid, 23, nint.Zero, out object instance);
+            if (hr != 0)
+                Marshal.ThrowExceptionForHR(hr);
+            var volume = (IAudioEndpointVolume)instance;
+            hr = volume.GetMasterVolumeLevelScalar(out float scalar);
+            if (hr != 0)
+                Marshal.ThrowExceptionForHR(hr);
+            return Math.Clamp((int)Math.Round(scalar * 100), 0, 100);
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     public bool SetDefault(string deviceId, out string? error)
@@ -99,6 +119,25 @@ public sealed class AudioDeviceService
     }
 
     [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown),
+     Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
+    private interface IAudioEndpointVolume
+    {
+        [PreserveSig] int RegisterControlChangeNotify(nint notify);
+        [PreserveSig] int UnregisterControlChangeNotify(nint notify);
+        [PreserveSig] int GetChannelCount(out uint channelCount);
+        [PreserveSig] int SetMasterVolumeLevel(float levelDb, nint context);
+        [PreserveSig] int SetMasterVolumeLevelScalar(float level, nint context);
+        [PreserveSig] int GetMasterVolumeLevel(out float levelDb);
+        [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+        [PreserveSig] int SetChannelVolumeLevel(uint channel, float levelDb, nint context);
+        [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, nint context);
+        [PreserveSig] int GetChannelVolumeLevel(uint channel, out float levelDb);
+        [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, nint context);
+        [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
+    }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown),
      Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
     private interface IPropertyStore
     {
@@ -164,3 +203,4 @@ public sealed class AudioDeviceService
         int SetEndpointVisibility();
     }
 }
+
