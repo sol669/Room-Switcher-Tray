@@ -17,6 +17,10 @@ public sealed class AppSettings
 {
     public List<Scenario> Scenarios { get; set; } = [];
     public Guid? ActiveScenarioId { get; set; }
+    public Dictionary<string, string> DisplayAliases { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> AudioAliases { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
     public AppTheme Theme { get; set; } = AppTheme.System;
     public AppLanguage Language { get; set; } = DetectLanguage();
     public bool StartWithWindows { get; set; }
@@ -27,3 +31,4 @@ public sealed class AppSettings
             ? AppLanguage.Russian
             : AppLanguage.English;
 }
+
