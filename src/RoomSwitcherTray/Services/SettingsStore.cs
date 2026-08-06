@@ -50,16 +50,30 @@ public sealed class SettingsStore
     private void Normalize()
     {
         Current.Scenarios ??= [];
+        Current.DisplayAliases = new Dictionary<string, string>(
+            Current.DisplayAliases ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+        Current.AudioAliases = new Dictionary<string, string>(
+            Current.AudioAliases ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
         foreach (Scenario scenario in Current.Scenarios)
         {
             scenario.Name ??= string.Empty;
             scenario.DisplayIds ??= [];
+            scenario.IconKey = string.IsNullOrWhiteSpace(scenario.IconKey)
+                ? "monitor" : scenario.IconKey;
         }
 
         if (Current.ActiveScenarioId is Guid active &&
             Current.Scenarios.All(s => s.Id != active))
             Current.ActiveScenarioId = null;
     }
+
+    public string DisplayName(DisplayDevice device) =>
+        Current.DisplayAliases.TryGetValue(device.Id, out string? alias) &&
+        !string.IsNullOrWhiteSpace(alias) ? alias.Trim() : device.Name;
+
+    public string AudioName(AudioDevice device) =>
+        Current.AudioAliases.TryGetValue(device.Id, out string? alias) &&
+        !string.IsNullOrWhiteSpace(alias) ? alias.Trim() : device.Name;
 
     private void ApplyAutostart()
     {
@@ -92,3 +106,4 @@ public sealed class SettingsStore
         }
     }
 }
+
