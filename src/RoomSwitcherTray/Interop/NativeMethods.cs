@@ -14,6 +14,8 @@ internal static class NativeMethods
     internal const uint MF_SEPARATOR = 0x0800;
     internal const uint MF_POPUP = 0x0010;
     internal const uint MF_CHECKED = 0x0008;
+    internal const uint MF_GRAYED = 0x0001;
+    internal const uint MF_DEFAULT = 0x1000;
     internal const uint NIF_MESSAGE = 0x0001;
     internal const uint NIF_ICON = 0x0002;
     internal const uint NIF_TIP = 0x0004;
@@ -57,7 +59,13 @@ internal static class NativeMethods
     }
 
     internal enum DISPLAYCONFIG_MODE_INFO_TYPE : uint { Source = 1, Target = 2, DesktopImage = 3 }
-    internal enum DISPLAYCONFIG_DEVICE_INFO_TYPE : uint { GetSourceName = 1, GetTargetName = 2 }
+    internal enum DISPLAYCONFIG_DEVICE_INFO_TYPE : uint
+    {
+        GetSourceName = 1,
+        GetTargetName = 2,
+        GetAdvancedColorInfo = 9,
+        SetAdvancedColorState = 10
+    }
 
     [StructLayout(LayoutKind.Sequential)] internal struct POINTL { public int x; public int y; }
     [StructLayout(LayoutKind.Sequential)] internal struct POINT { public int X; public int Y; }
@@ -154,6 +162,22 @@ internal static class NativeMethods
         public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string viewGdiDeviceName;
     }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO
+    {
+        public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+        public uint value;
+        public uint colorEncoding;
+        public uint bitsPerColorChannel;
+        public readonly bool AdvancedColorSupported => (value & 0x1) != 0;
+        public readonly bool AdvancedColorEnabled => (value & 0x2) != 0;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE
+    {
+        public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+        public uint value;
+    }
     internal static DISPLAYCONFIG_DEVICE_INFO_HEADER DeviceInfoHeader(
         DISPLAYCONFIG_DEVICE_INFO_TYPE type, int size, LUID adapterId, uint id) =>
         new() { type = type, size = (uint)size, adapterId = adapterId, id = id };
@@ -215,6 +239,7 @@ internal static class NativeMethods
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] internal static extern bool PostMessage(nint window, uint message, nuint wParam, nint lParam);
     [DllImport("user32.dll")] internal static extern nint LoadIcon(nint instance, nint iconName);
+    [DllImport("user32.dll")] internal static extern bool DestroyIcon(nint icon);
     [DllImport("user32.dll")] internal static extern bool SendNotifyMessage(nint window, uint message, nuint wParam, nint lParam);
     [DllImport("user32.dll", EntryPoint = "keybd_event")] internal static extern void KeybdEvent(byte virtualKey, byte scanCode, uint flags, nuint extraInfo);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int ChangeDisplaySettingsEx(string? deviceName, ref DEVMODE mode, nint window, uint flags, nint param);
@@ -224,4 +249,6 @@ internal static class NativeMethods
     [DllImport("user32.dll")] internal static extern int SetDisplayConfig(uint pathCount, DISPLAYCONFIG_PATH_INFO[] paths, uint modeCount, DISPLAYCONFIG_MODE_INFO[] modes, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_TARGET_DEVICE_NAME request);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_SOURCE_DEVICE_NAME request);
+    [DllImport("user32.dll")] internal static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO request);
+    [DllImport("user32.dll")] internal static extern int DisplayConfigSetDeviceInfo(ref DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE request);
 }
