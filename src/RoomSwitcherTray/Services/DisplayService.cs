@@ -161,9 +161,11 @@ public sealed class DisplayService
     private static bool IsPrimary(NativeMethods.DISPLAYCONFIG_PATH_INFO path,
         NativeMethods.DISPLAYCONFIG_MODE_INFO[] modes)
     {
-        if (path.sourceInfo.modeInfoIdx == NativeMethods.DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
+        uint index = path.sourceInfo.modeInfoIdx;
+        if (index == NativeMethods.DISPLAYCONFIG_PATH_MODE_IDX_INVALID ||
+            index >= (uint)modes.Length)
             return false;
-        NativeMethods.DISPLAYCONFIG_MODE_INFO mode = modes[path.sourceInfo.modeInfoIdx];
+        NativeMethods.DISPLAYCONFIG_MODE_INFO mode = modes[index];
         return mode.infoType == NativeMethods.DISPLAYCONFIG_MODE_INFO_TYPE.Source &&
                mode.sourceMode.position.x == 0 && mode.sourceMode.position.y == 0;
     }
