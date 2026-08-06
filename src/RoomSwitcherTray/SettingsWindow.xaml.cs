@@ -264,12 +264,23 @@ public sealed partial class SettingsWindow : Window
         {
             _displays = App.Displays.GetDisplays()
                 .Select(d => d with { Name = _store.DisplayName(d) }).ToList();
+        }
+        catch (Exception ex)
+        {
+            SettingsStore.Log(ex);
+            _displays = [];
+            ShowInfo(ex.Message, InfoBarSeverity.Error);
+        }
+
+        try
+        {
             _audioDevices = App.Audio.GetRenderDevices()
                 .Select(d => d with { Name = _store.AudioName(d) }).ToList();
         }
         catch (Exception ex)
         {
             SettingsStore.Log(ex);
+            _audioDevices = [];
             ShowInfo(ex.Message, InfoBarSeverity.Error);
         }
     }
