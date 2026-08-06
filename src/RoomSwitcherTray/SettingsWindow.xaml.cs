@@ -32,25 +32,45 @@ public sealed partial class SettingsWindow : Window
     {
         _store = store;
         _tray = tray;
-        // The unpackaged self-contained build can fail while loading compiled
-        // XAML on some Windows configurations. Build this small settings window
-        // with the same native WinUI controls so startup does not depend on the
-        // XAML resource loader.
-        BuildLayout();
-        ConfigureWindow();
-        LoadDevices();
-        ReloadScenarioList();
-        _loading = true;
-        ThemeCombo.SelectedIndex = (int)_store.Current.Theme;
-        LanguageCombo.SelectedIndex = _store.Current.Language == AppLanguage.Russian ? 0 : 1;
-        ApplyTheme();
-        ApplyLanguage();
-        _loading = false;
+        BuildBaselineSettingsWindow();
+    }
 
-        if (_store.Current.Scenarios.Count > 0)
-            ScenarioList.SelectedIndex = 0;
-        else
-            BeginCreate();
+    private void BuildBaselineSettingsWindow()
+    {
+        bool ru = _store.Current.Language == AppLanguage.Russian;
+        Title = "Room Switcher Tray";
+
+        var panel = new StackPanel
+        {
+            Padding = new Thickness(32),
+            Spacing = 16
+        };
+        panel.Children.Add(new TextBlock
+        {
+            Text = ru ? "Настройки" : "Settings",
+            FontSize = 28,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = ru
+                ? "Базовое окно работает. Разделы будут возвращаться поэтапно."
+                : "The baseline window works. Sections will return incrementally.",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.72
+        });
+
+        var closeButton = new Button
+        {
+            Content = ru ? "Закрыть" : "Close",
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 18, 0, 0)
+        };
+        closeButton.Click += (_, _) => Close();
+        panel.Children.Add(closeButton);
+
+        Content = panel;
+        AppWindow.Resize(new SizeInt32(560, 300));
     }
 
     private void BuildLayout()
@@ -338,46 +358,6 @@ public sealed partial class SettingsWindow : Window
         AudioCombo.SelectedItem = _audioDevices.FirstOrDefault(d =>
             d.Id.Equals(_editing.AudioDeviceId, StringComparison.OrdinalIgnoreCase));
         if (AudioCombo.SelectedItem is null && _audioDevices.Count > 0)
-                BuildBaselineSettingsWindow();
-            private void BuildBaselineSettingsWindow()
-    {
-        bool ru = _store.Current.Language == AppLanguage.Russian;
-        Title = "Room Switcher Tray";
-
-        var panel = new StackPanel
-        {
-            Padding = new Thickness(32),
-            Spacing = 16
-        };
-        panel.Children.Add(new TextBlock
-        {
-            Text = ru ? "Настройки" : "Settings",
-            FontSize = 28,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = ru
-                ? "Базовое окно работает. Разделы будут возвращаться поэтапно."
-                : "The baseline window works. Sections will return incrementally.",
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.72
-        });
-
-        var closeButton = new Button
-        {
-            Content = ru ? "Закрыть" : "Close",
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 18, 0, 0)
-        };
-        closeButton.Click += (_, _) => Close();
-        panel.Children.Add(closeButton);
-
-        Content = panel;
-        AppWindow.Resize(new SizeInt32(560, 300));
-    }
-
-return;
             AudioCombo.SelectedItem = _audioDevices.FirstOrDefault(d => d.IsDefault) ?? _audioDevices[0];
 
         DeleteButton.Visibility = _isNew ? Visibility.Collapsed : Visibility.Visible;
