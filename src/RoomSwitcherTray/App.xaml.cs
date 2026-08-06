@@ -38,8 +38,8 @@ public partial class App : Application
         Tray = new TrayService(Settings, Scenarios);
         Tray.Initialize();
 
-        if (Settings.Current.Scenarios.Count == 0)
-            Tray.ShowSettings();
+        // Settings are opened explicitly from the tray. Keeping startup window-free
+        // isolates the native tray lifetime from WinUI window construction.
     }
 
     private void CreateLifetimeWindow()
