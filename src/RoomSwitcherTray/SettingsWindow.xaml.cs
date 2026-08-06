@@ -27,26 +27,62 @@ public sealed partial class SettingsWindow : Window
     private TextBlock IconLabel = null!;
     private Button DevicesButton = null!;
     private ToggleSwitch AutostartToggle = null!;
+    private bool _initialized;
 
     public SettingsWindow(SettingsStore store, TrayService tray)
     {
         _store = store;
         _tray = tray;
+        SettingsStore.LogMessage("Settings: constructor started");
         BuildLayout();
+        SettingsStore.LogMessage("Settings: layout created");
         ConfigureWindow();
-        LoadDevices();
-        ReloadScenarioList();
         _loading = true;
         ThemeCombo.SelectedIndex = (int)_store.Current.Theme;
         LanguageCombo.SelectedIndex = _store.Current.Language == AppLanguage.Russian ? 0 : 1;
         ApplyTheme();
         ApplyLanguage();
-        _loading = false;
+        Activated += SettingsWindow_Activated;
+        SettingsStore.LogMessage("Settings: constructor completed");
+    }
 
-        if (_store.Current.Scenarios.Count > 0)
-            ScenarioList.SelectedIndex = 0;
-        else
-            BeginCreate();
+    private void SettingsWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        if (_initialized)
+            return;
+
+        _initialized = true;
+        Activated -= SettingsWindow_Activated;
+
+        // Native display and audio APIs are deliberately initialized only after
+        // WinUI has attached the window to a dispatcher and created its XamlRoot.
+        // Doing this work in the constructor can terminate the process inside
+        // combase on some display/driver configurations before managed exception
+        // handling gets a chance to run.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            try
+            {
+                SettingsStore.LogMessage("Settings: deferred initialization started");
+                LoadDevices();
+                SettingsStore.LogMessage("Settings: devices loaded");
+                ReloadScenarioList();
+                _loading = false;
+
+                if (_store.Current.Scenarios.Count > 0)
+                    ScenarioList.SelectedIndex = 0;
+                else
+                    BeginCreate();
+
+                SettingsStore.LogMessage("Settings: deferred initialization completed");
+            }
+            catch (Exception ex)
+            {
+                _loading = false;
+                SettingsStore.Log(ex);
+                ShowInfo(ex.Message, InfoBarSeverity.Error);
+            }
+        });
     }
 
     private void BuildLayout()
