@@ -105,5 +105,18 @@ public sealed class SettingsStore
             Debug.WriteLine(ex);
         }
     }
-}
 
+    public static void LogMessage(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            File.AppendAllText(Path.Combine(Folder, "error.log"),
+                $"[{DateTime.Now:O}] {message}\r\n");
+        }
+        catch
+        {
+            Debug.WriteLine(message);
+        }
+    }
+}
