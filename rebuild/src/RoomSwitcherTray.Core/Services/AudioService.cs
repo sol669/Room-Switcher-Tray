@@ -22,6 +22,18 @@ public sealed class AudioService
         pid = 14
     };
 
+    private static readonly PROPERTYKEY InterfaceFriendlyNameKey = new()
+    {
+        fmtid = new Guid("026E516E-B814-414B-83CD-856D6FEF4822"),
+        pid = 2
+    };
+
+    private static readonly PROPERTYKEY DeviceDescriptionKey = new()
+    {
+        fmtid = new Guid("A45C254E-DF1C-4EFD-8020-67D146A850E0"),
+        pid = 2
+    };
+
     public Task<IReadOnlyList<AudioDevice>> GetRenderDevicesAsync()
     {
         return Task.FromResult<IReadOnlyList<AudioDevice>>(GetRenderDevices());
@@ -54,6 +66,12 @@ public sealed class AudioService
                         name,
                         id.Equals(defaultId, StringComparison.OrdinalIgnoreCase),
                         ConvertState(state)));
+                }
+                catch (Exception ex)
+                {
+                    // A stale endpoint can disappear while Windows is enumerating
+                    // devices. Keep the remaining endpoints available in the UI.
+                    SettingsStore.Log(ex);
                 }
                 finally
                 {
@@ -109,19 +127,42 @@ public sealed class AudioService
     private static string GetFriendlyName(IMMDevice device)
     {
         IPropertyStore? store = null;
-        PROPVARIANT value = default;
         try
         {
-            ThrowIfFailed(device.OpenPropertyStore(StgmRead, out store));
-            PROPERTYKEY key = FriendlyNameKey;
-            ThrowIfFailed(store.GetValue(ref key, out value));
-            return value.vt == 31 && value.pointerValue != nint.Zero
-                ? Marshal.PtrToStringUni(value.pointerValue) ?? string.Empty
-                : string.Empty;
+            if (device.OpenPropertyStore(StgmRead, out store) < 0 || store is null)
+                return string.Empty;
+
+            foreach (PROPERTYKEY candidate in new[]
+                     {
+                         FriendlyNameKey,
+                         InterfaceFriendlyNameKey,
+                         DeviceDescriptionKey
+                     })
+            {
+                PROPERTYKEY key = candidate;
+                PROPVARIANT value = default;
+                try
+                {
+                    // Some disconnected HDMI endpoints expose no friendly-name
+                    // property and return a driver-specific "file not found" HRESULT.
+                    // The endpoint itself is still valid and must remain selectable.
+                    if (store.GetValue(ref key, out value) >= 0 &&
+                        value.vt == 31 && value.pointerValue != nint.Zero)
+                    {
+                        string? name = Marshal.PtrToStringUni(value.pointerValue);
+                        if (!string.IsNullOrWhiteSpace(name)) return name;
+                    }
+                }
+                finally
+                {
+                    PropVariantClear(ref value);
+                }
+            }
+
+            return string.Empty;
         }
         finally
         {
-            PropVariantClear(ref value);
             Release(store);
         }
     }
