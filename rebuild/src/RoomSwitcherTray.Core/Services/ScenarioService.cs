@@ -21,7 +21,9 @@ public sealed class ScenarioService(
         try
         {
             await Task.Run(() => displays.ApplySingleDisplay(scenario.DisplayId));
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+            // HDMI/DisplayPort audio endpoints often appear a few seconds after
+            // Windows has activated the corresponding display path.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
             await audio.SetDefaultWhenAvailableAsync(scenario.AudioDeviceId, timeout.Token);
             settings.Current.ActiveScenario = slot;
             settings.Save();

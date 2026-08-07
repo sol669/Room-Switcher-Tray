@@ -31,9 +31,23 @@ public sealed record DisplayDevice(string Id, string Name, bool IsActive, bool I
     public override string ToString() => IsActive ? $"{Name} — используется" : Name;
 }
 
-public sealed record AudioDevice(string Id, string Name, bool IsDefault)
+public enum AudioDeviceState
 {
-    public override string ToString() => IsDefault ? $"{Name} — используется" : Name;
+    Active,
+    Disabled,
+    NotPresent,
+    Unplugged
+}
+
+public sealed record AudioDevice(string Id, string Name, bool IsDefault, AudioDeviceState State)
+{
+    public bool IsActive => State == AudioDeviceState.Active;
+
+    public override string ToString() =>
+        IsDefault ? $"{Name} — используется" :
+        State == AudioDeviceState.Disabled ? $"{Name} — отключено в Windows" :
+        State != AudioDeviceState.Active ? $"{Name} — сейчас недоступно" :
+        Name;
 }
 
 public sealed record ApplyResult(bool Success, string Message);

@@ -1,40 +1,138 @@
 using System.Runtime.InteropServices;
-using Windows.Devices.Enumeration;
-using Windows.Media.Devices;
 
 namespace RoomSwitcherTray.Core.Services;
 
+/// <summary>
+/// Enumerates Core Audio endpoints in every state. This is important for HDMI
+/// and DisplayPort audio: the endpoint can be unplugged/not-present while its
+/// display is disabled, but it still has to be selectable in a saved scenario.
+/// </summary>
 public sealed class AudioService
 {
-    public async Task<IReadOnlyList<AudioDevice>> GetRenderDevicesAsync()
+    private const uint DeviceStateActive = 0x00000001;
+    private const uint DeviceStateDisabled = 0x00000002;
+    private const uint DeviceStateNotPresent = 0x00000004;
+    private const uint DeviceStateUnplugged = 0x00000008;
+    private const uint DeviceStateMaskAll = 0x0000000F;
+    private const uint StgmRead = 0;
+
+    private static readonly PROPERTYKEY FriendlyNameKey = new()
     {
-        string selector = MediaDevice.GetAudioRenderSelector();
-        DeviceInformationCollection devices = await DeviceInformation.FindAllAsync(selector);
-        string defaultId = MediaDevice.GetDefaultAudioRenderId(AudioDeviceRole.Default);
-        return devices
-            .Where(device => device.IsEnabled)
-            .Select(device => new AudioDevice(device.Id, device.Name,
-                device.Id.Equals(defaultId, StringComparison.OrdinalIgnoreCase)))
-            .OrderByDescending(device => device.IsDefault)
-            .ThenBy(device => device.Name)
-            .ToList();
+        fmtid = new Guid("A45C254E-DF1C-4EFD-8020-67D146A850E0"),
+        pid = 14
+    };
+
+    public Task<IReadOnlyList<AudioDevice>> GetRenderDevicesAsync()
+    {
+        return Task.FromResult<IReadOnlyList<AudioDevice>>(GetRenderDevices());
+    }
+
+    private static IReadOnlyList<AudioDevice> GetRenderDevices()
+    {
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDeviceCollection? collection = null;
+        try
+        {
+            enumerator = (IMMDeviceEnumerator)(object)new MMDeviceEnumeratorComObject();
+            string defaultId = GetDefaultId(enumerator);
+            ThrowIfFailed(enumerator.EnumAudioEndpoints(EDataFlow.Render, DeviceStateMaskAll, out collection));
+            ThrowIfFailed(collection.GetCount(out uint count));
+
+            var result = new List<AudioDevice>((int)count);
+            for (uint index = 0; index < count; index++)
+            {
+                IMMDevice? device = null;
+                try
+                {
+                    ThrowIfFailed(collection.Item(index, out device));
+                    ThrowIfFailed(device.GetId(out string id));
+                    ThrowIfFailed(device.GetState(out uint state));
+                    string name = GetFriendlyName(device);
+                    if (string.IsNullOrWhiteSpace(name)) name = id;
+                    result.Add(new AudioDevice(
+                        id,
+                        name,
+                        id.Equals(defaultId, StringComparison.OrdinalIgnoreCase),
+                        ConvertState(state)));
+                }
+                finally
+                {
+                    Release(device);
+                }
+            }
+
+            return result
+                .OrderByDescending(device => device.IsDefault)
+                .ThenByDescending(device => device.IsActive)
+                .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+        finally
+        {
+            Release(collection);
+            Release(enumerator);
+        }
     }
 
     public async Task SetDefaultWhenAvailableAsync(string deviceId, CancellationToken cancellationToken)
     {
-        for (int attempt = 0; attempt < 20; attempt++)
+        while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            IReadOnlyList<AudioDevice> devices = await GetRenderDevicesAsync();
-            if (devices.Any(device => device.Id.Equals(deviceId, StringComparison.OrdinalIgnoreCase)))
+            AudioDevice? device = GetRenderDevices()
+                .FirstOrDefault(item => item.Id.Equals(deviceId, StringComparison.OrdinalIgnoreCase));
+            if (device?.IsActive == true)
             {
                 SetDefault(deviceId);
                 return;
             }
+
             await Task.Delay(250, cancellationToken);
         }
-        throw new InvalidOperationException("Выбранное аудиоустройство не появилось после переключения дисплея.");
     }
+
+    private static string GetDefaultId(IMMDeviceEnumerator enumerator)
+    {
+        IMMDevice? device = null;
+        try
+        {
+            int result = enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out device);
+            if (result < 0 || device is null) return string.Empty;
+            return device.GetId(out string id) >= 0 ? id : string.Empty;
+        }
+        finally
+        {
+            Release(device);
+        }
+    }
+
+    private static string GetFriendlyName(IMMDevice device)
+    {
+        IPropertyStore? store = null;
+        PROPVARIANT value = default;
+        try
+        {
+            ThrowIfFailed(device.OpenPropertyStore(StgmRead, out store));
+            PROPERTYKEY key = FriendlyNameKey;
+            ThrowIfFailed(store.GetValue(ref key, out value));
+            return value.vt == 31 && value.pointerValue != nint.Zero
+                ? Marshal.PtrToStringUni(value.pointerValue) ?? string.Empty
+                : string.Empty;
+        }
+        finally
+        {
+            PropVariantClear(ref value);
+            Release(store);
+        }
+    }
+
+    private static AudioDeviceState ConvertState(uint state) => state switch
+    {
+        DeviceStateActive => AudioDeviceState.Active,
+        DeviceStateDisabled => AudioDeviceState.Disabled,
+        DeviceStateUnplugged => AudioDeviceState.Unplugged,
+        _ => AudioDeviceState.NotPresent
+    };
 
     private static void SetDefault(string deviceId)
     {
@@ -46,24 +144,81 @@ public sealed class AudioService
         }
         finally
         {
-            if (Marshal.IsComObject(policy))
-                Marshal.FinalReleaseComObject(policy);
+            Release(policy);
         }
+    }
+
+    private static void Release(object? value)
+    {
+        if (value is not null && Marshal.IsComObject(value))
+            Marshal.FinalReleaseComObject(value);
     }
 
     private static void ThrowIfFailed(int result)
     {
-        if (result < 0)
-            Marshal.ThrowExceptionForHR(result);
+        if (result < 0) Marshal.ThrowExceptionForHR(result);
     }
 
+    private enum EDataFlow { Render, Capture, All }
     private enum ERole { Console, Multimedia, Communications }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROPERTYKEY
+    {
+        public Guid fmtid;
+        public uint pid;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct PROPVARIANT
+    {
+        [FieldOffset(0)] public ushort vt;
+        [FieldOffset(8)] public nint pointerValue;
+    }
+
+    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+    private sealed class MMDeviceEnumeratorComObject { }
+
+    [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMMDeviceEnumerator
+    {
+        [PreserveSig] int EnumAudioEndpoints(EDataFlow dataFlow, uint stateMask, out IMMDeviceCollection devices);
+        [PreserveSig] int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice device);
+        [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
+        [PreserveSig] int RegisterEndpointNotificationCallback(nint client);
+        [PreserveSig] int UnregisterEndpointNotificationCallback(nint client);
+    }
+
+    [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-C0A94A5A27A4"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMMDeviceCollection
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int Item(uint index, out IMMDevice device);
+    }
+
+    [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMMDevice
+    {
+        [PreserveSig] int Activate(ref Guid iid, uint context, nint activationParams, out nint instance);
+        [PreserveSig] int OpenPropertyStore(uint access, out IPropertyStore properties);
+        [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+        [PreserveSig] int GetState(out uint state);
+    }
+
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPropertyStore
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int GetAt(uint index, out PROPERTYKEY key);
+        [PreserveSig] int GetValue(ref PROPERTYKEY key, out PROPVARIANT value);
+        [PreserveSig] int SetValue(ref PROPERTYKEY key, ref PROPVARIANT value);
+        [PreserveSig] int Commit();
+    }
 
     [ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")]
     private sealed class PolicyConfigClient { }
 
-    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown),
-     Guid("F8679F50-850A-41CF-9C72-430F290290C8")]
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("F8679F50-850A-41CF-9C72-430F290290C8")]
     private interface IPolicyConfig
     {
         int GetMixFormat([MarshalAs(UnmanagedType.LPWStr)] string device, nint format);
@@ -79,4 +234,7 @@ public sealed class AudioService
         [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string device, ERole role);
         int SetEndpointVisibility([MarshalAs(UnmanagedType.LPWStr)] string device, int visible);
     }
+
+    [DllImport("ole32.dll")]
+    private static extern int PropVariantClear(ref PROPVARIANT value);
 }
