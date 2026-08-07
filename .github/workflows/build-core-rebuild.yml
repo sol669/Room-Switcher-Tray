@@ -1,0 +1,42 @@
+name: Build core rebuild
+
+on:
+  push:
+    branches:
+      - codex/core-rebuild
+    paths:
+      - rebuild/**
+      - .github/workflows/build-core-rebuild.yml
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish self-contained test build
+        run: >-
+          dotnet publish rebuild/src/RoomSwitcherTray.Core/RoomSwitcherTray.Core.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:WindowsAppSDKSelfContained=true
+          -o artifacts/Room-Switcher-Tray-Core
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Room-Switcher-Tray-Core-Rebuild-win-x64
+          path: artifacts/Room-Switcher-Tray-Core/**
+          if-no-files-found: error
+          compression-level: 9
