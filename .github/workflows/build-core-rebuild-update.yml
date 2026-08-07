@@ -1,4 +1,4 @@
-name: Build core rebuild with update
+name: Build Core v0.3.1
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Publish self-contained test build
+      - name: Publish self-contained Core v0.3.1
         run: >-
           dotnet publish rebuild/src/RoomSwitcherTray.Core/RoomSwitcherTray.Core.csproj
           -c Release
@@ -33,10 +33,10 @@ jobs:
           -p:WindowsAppSDKSelfContained=true
           -o artifacts/Room-Switcher-Tray-Core
 
-      - name: Upload portable artifact
+      - name: Upload full Core v0.3.1
         uses: actions/upload-artifact@v4
         with:
-          name: Room-Switcher-Tray-Core-Rebuild-win-x64
+          name: Room-Switcher-Tray-Core-v0.3.1-win-x64
           path: artifacts/Room-Switcher-Tray-Core/**
           if-no-files-found: error
           compression-level: 9
@@ -56,10 +56,10 @@ jobs:
             Copy-Item -LiteralPath $assets -Destination $target -Recurse
           }
 
-      - name: Upload update-only artifact
+      - name: Upload update package v0.3.1
         uses: actions/upload-artifact@v4
         with:
-          name: Room-Switcher-Tray-Update-win-x64
+          name: Room-Switcher-Tray-Update-v0.3.1-win-x64
           path: artifacts/Room-Switcher-Tray-Update/**
           if-no-files-found: error
           compression-level: 9
