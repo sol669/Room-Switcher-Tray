@@ -1,0 +1,27 @@
+name: Add update-only artifact
+on:
+  push:
+    paths:
+      - .github/workflows/hotfix-update-artifact-v1.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/core-rebuild
+      - name: Write workflow
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:GITHUB_WORKSPACE '.github/workflows/build-core-rebuild.yml'
+          [IO.File]::WriteAllBytes($target, [Convert]::FromBase64String('bmFtZTogQnVpbGQgY29yZSByZWJ1aWxkCgpvbjoKICBwdXNoOgogICAgYnJhbmNoZXM6CiAgICAgIC0gY29kZXgvY29yZS1yZWJ1aWxkCiAgICBwYXRoczoKICAgICAgLSByZWJ1aWxkLyoqCiAgICAgIC0gLmdpdGh1Yi93b3JrZmxvd3MvYnVpbGQtY29yZS1yZWJ1aWxkLnltbAogIHdvcmtmbG93X2Rpc3BhdGNoOgoKam9iczoKICBidWlsZDoKICAgIHJ1bnMtb246IHdpbmRvd3MtbGF0ZXN0CiAgICBwZXJtaXNzaW9uczoKICAgICAgY29udGVudHM6IHJlYWQKCiAgICBzdGVwczoKICAgICAgLSBuYW1lOiBDaGVja291dAogICAgICAgIHVzZXM6IGFjdGlvbnMvY2hlY2tvdXRAdjQKCiAgICAgIC0gbmFtZTogU2V0dXAgLk5FVAogICAgICAgIHVzZXM6IGFjdGlvbnMvc2V0dXAtZG90bmV0QHY0CiAgICAgICAgd2l0aDoKICAgICAgICAgIGRvdG5ldC12ZXJzaW9uOiA4LjAueAoKICAgICAgLSBuYW1lOiBQdWJsaXNoIHNlbGYtY29udGFpbmVkIHRlc3QgYnVpbGQKICAgICAgICBydW46ID4tCiAgICAgICAgICBkb3RuZXQgcHVibGlzaCByZWJ1aWxkL3NyYy9Sb29tU3dpdGNoZXJUcmF5LkNvcmUvUm9vbVN3aXRjaGVyVHJheS5Db3JlLmNzcHJvagogICAgICAgICAgLWMgUmVsZWFzZQogICAgICAgICAgLXIgd2luLXg2NAogICAgICAgICAgLS1zZWxmLWNvbnRhaW5lZCB0cnVlCiAgICAgICAgICAtcDpXaW5kb3dzQXBwU0RLU2VsZkNvbnRhaW5lZD10cnVlCiAgICAgICAgICAtbyBhcnRpZmFjdHMvUm9vbS1Td2l0Y2hlci1UcmF5LUNvcmUKCiAgICAgIC0gbmFtZTogVXBsb2FkIHBvcnRhYmxlIGFydGlmYWN0CiAgICAgICAgdXNlczogYWN0aW9ucy91cGxvYWQtYXJ0aWZhY3RAdjQKICAgICAgICB3aXRoOgogICAgICAgICAgbmFtZTogUm9vbS1Td2l0Y2hlci1UcmF5LUNvcmUtUmVidWlsZC13aW4teDY0CiAgICAgICAgICBwYXRoOiBhcnRpZmFjdHMvUm9vbS1Td2l0Y2hlci1UcmF5LUNvcmUvKioKICAgICAgICAgIGlmLW5vLWZpbGVzLWZvdW5kOiBlcnJvcgogICAgICAgICAgY29tcHJlc3Npb24tbGV2ZWw6IDkKCiAgICAgIC0gbmFtZTogUHJlcGFyZSB1cGRhdGUtb25seSBwYWNrYWdlCiAgICAgICAgc2hlbGw6IHB3c2gKICAgICAgICBydW46IHwKICAgICAgICAgICRzb3VyY2UgPSBKb2luLVBhdGggJGVudjpHSVRIVUJfV09SS1NQQUNFICdhcnRpZmFjdHMvUm9vbS1Td2l0Y2hlci1UcmF5LUNvcmUnCiAgICAgICAgICAkdGFyZ2V0ID0gSm9pbi1QYXRoICRlbnY6R0lUSFVCX1dPUktTUEFDRSAnYXJ0aWZhY3RzL1Jvb20tU3dpdGNoZXItVHJheS1VcGRhdGUnCiAgICAgICAgICBOZXctSXRlbSAtSXRlbVR5cGUgRGlyZWN0b3J5IC1Gb3JjZSAtUGF0aCAkdGFyZ2V0IHwgT3V0LU51bGwKICAgICAgICAgIEdldC1DaGlsZEl0ZW0gLUxpdGVyYWxQYXRoICRzb3VyY2UgLUZpbGUgLUZpbHRlciAnUm9vbVN3aXRjaGVyVHJheSonIHwKICAgICAgICAgICAgQ29weS1JdGVtIC1EZXN0aW5hdGlvbiAkdGFyZ2V0CiAgICAgICAgICBHZXQtQ2hpbGRJdGVtIC1MaXRlcmFsUGF0aCAkc291cmNlIC1GaWxlIC1GaWx0ZXIgJyoucHJpJyAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8CiAgICAgICAgICAgIENvcHktSXRlbSAtRGVzdGluYXRpb24gJHRhcmdldAogICAgICAgICAgJGFzc2V0cyA9IEpvaW4tUGF0aCAkc291cmNlICdBc3NldHMnCiAgICAgICAgICBpZiAoVGVzdC1QYXRoIC1MaXRlcmFsUGF0aCAkYXNzZXRzKSB7CiAgICAgICAgICAgIENvcHktSXRlbSAtTGl0ZXJhbFBhdGggJGFzc2V0cyAtRGVzdGluYXRpb24gJHRhcmdldCAtUmVjdXJzZQogICAgICAgICAgfQoKICAgICAgLSBuYW1lOiBVcGxvYWQgdXBkYXRlLW9ubHkgYXJ0aWZhY3QKICAgICAgICB1c2VzOiBhY3Rpb25zL3VwbG9hZC1hcnRpZmFjdEB2NAogICAgICAgIHdpdGg6CiAgICAgICAgICBuYW1lOiBSb29tLVN3aXRjaGVyLVRyYXktVXBkYXRlLXdpbi14NjQKICAgICAgICAgIHBhdGg6IGFydGlmYWN0cy9Sb29tLVN3aXRjaGVyLVRyYXktVXBkYXRlLyoqCiAgICAgICAgICBpZi1uby1maWxlcy1mb3VuZDogZXJyb3IKICAgICAgICAgIGNvbXByZXNzaW9uLWxldmVsOiA5Cg=='))
+      - name: Commit workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- .github/workflows/build-core-rebuild.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "build: add update-only artifact"
+          git push origin HEAD:codex/core-rebuild
