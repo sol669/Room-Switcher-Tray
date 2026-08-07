@@ -1,225 +1,224 @@
-using Microsoft.UI;
-using Microsoft.UI.Windowing;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using RoomSwitcherTray.Core.Services;
-using System.Runtime.InteropServices;
-using Windows.Graphics;
+using Forms = System.Windows.Forms;
 
 namespace RoomSwitcherTray.Core;
 
-public sealed class SettingsWindow : Window
+/// <summary>
+/// Небольшое системное окно для проверки ядра переключения сценариев.
+/// Оно намеренно не использует XAML: ошибка интерфейса не должна ронять трей.
+/// </summary>
+public sealed class SettingsWindow : IDisposable
 {
     private readonly SettingsStore _settings;
     private readonly TrayService _tray;
-    private readonly TextBox _scenario1Name = new();
-    private readonly TextBox _scenario2Name = new();
-    private readonly ComboBox _scenario1Display = new();
-    private readonly ComboBox _scenario2Display = new();
-    private readonly ComboBox _scenario1Audio = new();
-    private readonly ComboBox _scenario2Audio = new();
-    private readonly InfoBar _statusBar = new() { IsOpen = false, IsClosable = true };
-    private readonly Button _refreshButton = new() { Content = "Обновить список устройств" };
-    private readonly Button _saveButton = new() { Content = "Сохранить", MinWidth = 120 };
+    private readonly Forms.Form _form;
+    private readonly Forms.TextBox _scenario1Name = new();
+    private readonly Forms.TextBox _scenario2Name = new();
+    private readonly Forms.ComboBox _scenario1Display = new();
+    private readonly Forms.ComboBox _scenario2Display = new();
+    private readonly Forms.ComboBox _scenario1Audio = new();
+    private readonly Forms.ComboBox _scenario2Audio = new();
+    private readonly Forms.Label _status = new();
+    private readonly Forms.Button _refresh = new();
+    private readonly Forms.Button _save = new();
     private IReadOnlyList<DisplayDevice> _displays = [];
     private IReadOnlyList<AudioDevice> _audioDevices = [];
     private bool _loaded;
+
+    public event EventHandler? Closed;
 
     public SettingsWindow(SettingsStore settings, TrayService tray)
     {
         _settings = settings;
         _tray = tray;
-        Title = "Room Switcher Tray";
-        Content = BuildContent();
-        Activated += SettingsWindow_Activated;
+        _form = BuildForm();
+        _form.Shown += async (_, _) => await LoadDevicesOnceAsync();
+        _form.FormClosed += (_, _) => Closed?.Invoke(this, EventArgs.Empty);
     }
 
-    private FrameworkElement BuildContent()
+    public void Activate()
     {
-        var root = new Grid { Background = GetBrush("ApplicationPageBackgroundThemeBrush") };
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var content = new StackPanel
+        if (!_form.Visible)
+            _form.Show();
+        else
         {
-            Width = 760,
-            MaxWidth = 760,
-            Margin = new Thickness(40, 32, 40, 28),
-            Spacing = 20
-        };
-        content.Children.Add(new TextBlock
-        {
-            Text = "Room Switcher Tray",
-            FontSize = 28,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-        });
-        content.Children.Add(new TextBlock
-        {
-            Text = "Настройте два сценария переключения",
-            FontSize = 15,
-            Opacity = 0.68,
-            Margin = new Thickness(0, -14, 0, 0)
-        });
-        content.Children.Add(_statusBar);
-        content.Children.Add(BuildScenarioCard(1));
-        content.Children.Add(BuildScenarioCard(2));
-
-        _refreshButton.HorizontalAlignment = HorizontalAlignment.Left;
-        _refreshButton.Click += async (_, _) => await ReloadDevicesAsync();
-        content.Children.Add(_refreshButton);
-
-        var scroll = new ScrollViewer
-        {
-            Content = content,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            HorizontalContentAlignment = HorizontalAlignment.Center
-        };
-        Grid.SetRow(scroll, 0);
-        root.Children.Add(scroll);
-
-        var closeButton = new Button { Content = "Закрыть", MinWidth = 120 };
-        closeButton.Click += (_, _) => Close();
-        _saveButton.Click += SaveButton_Click;
-        if (Application.Current.Resources.TryGetValue("AccentButtonStyle", out object accent) && accent is Style style)
-            _saveButton.Style = style;
-
-        var actions = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 12
-        };
-        actions.Children.Add(closeButton);
-        actions.Children.Add(_saveButton);
-        var footer = new Border
-        {
-            Padding = new Thickness(24, 16, 24, 16),
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            BorderBrush = GetBrush("DividerStrokeColorDefaultBrush"),
-            Background = GetBrush("ApplicationPageBackgroundThemeBrush"),
-            Child = actions
-        };
-        Grid.SetRow(footer, 1);
-        root.Children.Add(footer);
-        return root;
+            _form.WindowState = Forms.FormWindowState.Normal;
+            _form.Activate();
+            _form.BringToFront();
+        }
     }
 
-    private Border BuildScenarioCard(int slot)
+    private Forms.Form BuildForm()
+    {
+        var form = new Forms.Form
+        {
+            Text = "Room Switcher Tray — сценарии",
+            StartPosition = Forms.FormStartPosition.CenterScreen,
+            ClientSize = new System.Drawing.Size(720, 650),
+            MinimumSize = new System.Drawing.Size(640, 600),
+            AutoScaleMode = Forms.AutoScaleMode.Dpi,
+            Font = new System.Drawing.Font("Segoe UI", 10F),
+            MaximizeBox = false
+        };
+
+        var root = new Forms.TableLayoutPanel
+        {
+            Dock = Forms.DockStyle.Fill,
+            Padding = new Forms.Padding(24),
+            ColumnCount = 1,
+            RowCount = 6
+        };
+        root.RowStyles.Add(new Forms.RowStyle(Forms.SizeType.AutoSize));
+        root.RowStyles.Add(new Forms.RowStyle(Forms.SizeType.Percent, 50));
+        root.RowStyles.Add(new Forms.RowStyle(Forms.SizeType.Percent, 50));
+        root.RowStyles.Add(new Forms.RowStyle(Forms.SizeType.AutoSize));
+        root.RowStyles.Add(new Forms.RowStyle(Forms.SizeType.AutoSize));
+        root.RowStyles.Add(new Forms.RowStyle(Forms.SizeType.AutoSize));
+
+        var title = new Forms.Label
+        {
+            AutoSize = true,
+            Text = "Настройте два сценария переключения",
+            Font = new System.Drawing.Font("Segoe UI Semibold", 16F),
+            Margin = new Forms.Padding(0, 0, 0, 16)
+        };
+        root.Controls.Add(title, 0, 0);
+        root.Controls.Add(BuildScenarioGroup(1), 0, 1);
+        root.Controls.Add(BuildScenarioGroup(2), 0, 2);
+
+        _status.AutoSize = true;
+        _status.ForeColor = System.Drawing.Color.Firebrick;
+        _status.Margin = new Forms.Padding(0, 8, 0, 8);
+        root.Controls.Add(_status, 0, 3);
+
+        _refresh.Text = "Обновить список устройств";
+        _refresh.AutoSize = true;
+        _refresh.Click += async (_, _) => await ReloadDevicesAsync();
+        root.Controls.Add(_refresh, 0, 4);
+
+        var actions = new Forms.FlowLayoutPanel
+        {
+            Dock = Forms.DockStyle.Fill,
+            AutoSize = true,
+            FlowDirection = Forms.FlowDirection.RightToLeft,
+            WrapContents = false,
+            Margin = new Forms.Padding(0, 18, 0, 0)
+        };
+        _save.Text = "Сохранить";
+        _save.AutoSize = true;
+        _save.Padding = new Forms.Padding(14, 5, 14, 5);
+        _save.Click += Save_Click;
+        var cancel = new Forms.Button
+        {
+            Text = "Отмена",
+            AutoSize = true,
+            Padding = new Forms.Padding(14, 5, 14, 5)
+        };
+        cancel.Click += (_, _) => _form.Close();
+        actions.Controls.Add(_save);
+        actions.Controls.Add(cancel);
+        root.Controls.Add(actions, 0, 5);
+        form.Controls.Add(root);
+        form.AcceptButton = _save;
+        form.CancelButton = cancel;
+        return form;
+    }
+
+    private Forms.GroupBox BuildScenarioGroup(int slot)
     {
         bool first = slot == 1;
-        TextBox name = first ? _scenario1Name : _scenario2Name;
-        ComboBox display = first ? _scenario1Display : _scenario2Display;
-        ComboBox audio = first ? _scenario1Audio : _scenario2Audio;
-        name.Header = "Название";
-        name.PlaceholderText = first ? "Например, Компьютер" : "Например, Телевизор";
-        display.Header = "Дисплей";
-        display.PlaceholderText = "Выберите дисплей";
-        display.HorizontalAlignment = HorizontalAlignment.Stretch;
-        audio.Header = "Аудиоустройство";
-        audio.PlaceholderText = "Выберите аудиоустройство";
-        audio.HorizontalAlignment = HorizontalAlignment.Stretch;
+        Forms.TextBox name = first ? _scenario1Name : _scenario2Name;
+        Forms.ComboBox display = first ? _scenario1Display : _scenario2Display;
+        Forms.ComboBox audio = first ? _scenario1Audio : _scenario2Audio;
+        display.DropDownStyle = Forms.ComboBoxStyle.DropDownList;
+        audio.DropDownStyle = Forms.ComboBoxStyle.DropDownList;
 
-        var panel = new StackPanel { Spacing = 16 };
-        panel.Children.Add(new TextBlock
+        var grid = new Forms.TableLayoutPanel
+        {
+            Dock = Forms.DockStyle.Fill,
+            Padding = new Forms.Padding(12),
+            ColumnCount = 2,
+            RowCount = 3
+        };
+        grid.ColumnStyles.Add(new Forms.ColumnStyle(Forms.SizeType.Absolute, 160));
+        grid.ColumnStyles.Add(new Forms.ColumnStyle(Forms.SizeType.Percent, 100));
+        for (int row = 0; row < 3; row++)
+            grid.RowStyles.Add(new Forms.RowStyle(Forms.SizeType.Percent, 33.33F));
+        AddRow(grid, 0, "Название", name);
+        AddRow(grid, 1, "Дисплей", display);
+        AddRow(grid, 2, "Аудиоустройство", audio);
+        return new Forms.GroupBox
         {
             Text = $"Сценарий {slot}",
-            FontSize = 20,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-        });
-        panel.Children.Add(name);
-        panel.Children.Add(display);
-        panel.Children.Add(audio);
-        return new Border
-        {
-            Padding = new Thickness(24),
-            CornerRadius = new CornerRadius(8),
-            Background = GetBrush("CardBackgroundFillColorDefaultBrush"),
-            BorderBrush = GetBrush("CardStrokeColorDefaultBrush"),
-            BorderThickness = new Thickness(1),
-            Child = panel
+            Dock = Forms.DockStyle.Fill,
+            Margin = new Forms.Padding(0, 0, 0, 12),
+            Controls = { grid }
         };
     }
 
-    private static Brush GetBrush(string key)
+    private static void AddRow(Forms.TableLayoutPanel grid, int row, string caption, Forms.Control control)
     {
-        if (Application.Current.Resources.TryGetValue(key, out object value) && value is Brush brush)
-            return brush;
-        return new SolidColorBrush(Colors.Transparent);
+        var label = new Forms.Label
+        {
+            Text = caption,
+            AutoSize = true,
+            Anchor = Forms.AnchorStyles.Left
+        };
+        control.Dock = Forms.DockStyle.Fill;
+        control.Margin = new Forms.Padding(3, 8, 3, 8);
+        grid.Controls.Add(label, 0, row);
+        grid.Controls.Add(control, 1, row);
     }
 
-    private async void SettingsWindow_Activated(object sender, WindowActivatedEventArgs args)
+    private async Task LoadDevicesOnceAsync()
     {
         if (_loaded) return;
         _loaded = true;
-        CenterAndSize();
-        NativeTheme.Apply(Win32Interop.GetWindowFromWindowId(AppWindow.Id));
         await ReloadDevicesAsync();
-    }
-
-    private void CenterAndSize()
-    {
-        nint window = Win32Interop.GetWindowFromWindowId(AppWindow.Id);
-        uint dpi = GetDpiForWindow(window);
-        double scale = Math.Max(1, dpi / 96d);
-        DisplayArea area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
-        RectInt32 work = area.WorkArea;
-        int width = Math.Min((int)Math.Round(860 * scale), Math.Max(640, work.Width - 48));
-        int height = Math.Min((int)Math.Round(820 * scale), Math.Max(600, work.Height - 48));
-        AppWindow.Resize(new SizeInt32(width, height));
-        AppWindow.Move(new PointInt32(work.X + (work.Width - width) / 2,
-            work.Y + (work.Height - height) / 2));
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.IsMaximizable = false;
-            presenter.IsMinimizable = true;
-            presenter.IsResizable = true;
-        }
     }
 
     private async Task ReloadDevicesAsync()
     {
         SetBusy(true);
+        _status.Text = "Поиск устройств…";
         try
         {
-            ScenarioDefinition first = ReadScenarioSelection(1);
-            ScenarioDefinition second = ReadScenarioSelection(2);
+            ScenarioDefinition first = ReadScenario(1);
+            ScenarioDefinition second = ReadScenario(2);
             _displays = await Task.Run(App.Displays.GetDisplays);
             _audioDevices = await App.Audio.GetRenderDevicesAsync();
-            BindDevices(_scenario1Display, _scenario1Audio,
+            Bind(_scenario1Display, _scenario1Audio,
                 first.DisplayId.Length > 0 ? first.DisplayId : _settings.Current.Scenario1?.DisplayId,
                 first.AudioDeviceId.Length > 0 ? first.AudioDeviceId : _settings.Current.Scenario1?.AudioDeviceId);
-            BindDevices(_scenario2Display, _scenario2Audio,
+            Bind(_scenario2Display, _scenario2Audio,
                 second.DisplayId.Length > 0 ? second.DisplayId : _settings.Current.Scenario2?.DisplayId,
                 second.AudioDeviceId.Length > 0 ? second.AudioDeviceId : _settings.Current.Scenario2?.AudioDeviceId);
             _scenario1Name.Text = first.Name.Length > 0 ? first.Name : _settings.Current.Scenario1?.Name ?? string.Empty;
             _scenario2Name.Text = second.Name.Length > 0 ? second.Name : _settings.Current.Scenario2?.Name ?? string.Empty;
-            if (_displays.Count == 0 || _audioDevices.Count == 0)
-                ShowStatus("Не удалось найти все необходимые устройства.", InfoBarSeverity.Warning);
-            else
-                _statusBar.IsOpen = false;
+            _status.Text = _displays.Count == 0 || _audioDevices.Count == 0
+                ? "Не удалось найти все необходимые устройства."
+                : string.Empty;
         }
         catch (Exception ex)
         {
             SettingsStore.Log(ex);
-            ShowStatus($"Не удалось получить список устройств: {ex.Message}", InfoBarSeverity.Error);
+            _status.Text = $"Не удалось получить список устройств: {ex.Message}";
         }
-        finally { SetBusy(false); }
+        finally
+        {
+            SetBusy(false);
+        }
     }
 
-    private void BindDevices(ComboBox displayBox, ComboBox audioBox,
-        string? selectedDisplayId, string? selectedAudioId)
+    private void Bind(Forms.ComboBox display, Forms.ComboBox audio, string? displayId, string? audioId)
     {
-        displayBox.ItemsSource = _displays;
-        audioBox.ItemsSource = _audioDevices;
-        displayBox.SelectedItem = _displays.FirstOrDefault(device =>
-            device.Id.Equals(selectedDisplayId, StringComparison.OrdinalIgnoreCase));
-        audioBox.SelectedItem = _audioDevices.FirstOrDefault(device =>
-            device.Id.Equals(selectedAudioId, StringComparison.OrdinalIgnoreCase));
+        display.DataSource = _displays.ToList();
+        audio.DataSource = _audioDevices.ToList();
+        display.SelectedItem = _displays.FirstOrDefault(x => x.Id.Equals(displayId, StringComparison.OrdinalIgnoreCase));
+        audio.SelectedItem = _audioDevices.FirstOrDefault(x => x.Id.Equals(audioId, StringComparison.OrdinalIgnoreCase));
     }
 
-    private ScenarioDefinition ReadScenarioSelection(int slot)
+    private ScenarioDefinition ReadScenario(int slot)
     {
         bool first = slot == 1;
         return new ScenarioDefinition
@@ -230,45 +229,36 @@ public sealed class SettingsWindow : Window
         };
     }
 
-    private void SaveButton_Click(object sender, RoutedEventArgs e)
+    private void Save_Click(object? sender, EventArgs e)
     {
-        ScenarioDefinition first = ReadScenarioSelection(1);
-        ScenarioDefinition second = ReadScenarioSelection(2);
+        ScenarioDefinition first = ReadScenario(1);
+        ScenarioDefinition second = ReadScenario(2);
         if (!first.IsComplete || !second.IsComplete)
         {
-            ShowStatus("Для обоих сценариев укажите название, дисплей и аудиоустройство.", InfoBarSeverity.Warning);
+            _status.Text = "Для обоих сценариев укажите название, дисплей и аудиоустройство.";
             return;
         }
-        _settings.Current.Scenario1 = first;
-        _settings.Current.Scenario2 = second;
-        if (_settings.Current.ActiveScenario is not 1 and not 2)
-            _settings.Current.ActiveScenario = 0;
+
         try
         {
+            _settings.Current.Scenario1 = first;
+            _settings.Current.Scenario2 = second;
             _settings.Save();
             _tray.Refresh();
-            Close();
+            _form.Close();
         }
         catch (Exception ex)
         {
             SettingsStore.Log(ex);
-            ShowStatus($"Не удалось сохранить настройки: {ex.Message}", InfoBarSeverity.Error);
+            _status.Text = $"Не удалось сохранить настройки: {ex.Message}";
         }
     }
 
     private void SetBusy(bool busy)
     {
-        _refreshButton.IsEnabled = !busy;
-        _saveButton.IsEnabled = !busy;
+        _refresh.Enabled = !busy;
+        _save.Enabled = !busy;
     }
 
-    private void ShowStatus(string message, InfoBarSeverity severity)
-    {
-        _statusBar.Message = message;
-        _statusBar.Severity = severity;
-        _statusBar.IsOpen = true;
-    }
-
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(nint window);
+    public void Dispose() => _form.Dispose();
 }

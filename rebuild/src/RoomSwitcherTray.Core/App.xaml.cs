@@ -38,8 +38,8 @@ public partial class App : Application
         Tray = new TrayService(Settings, Scenarios);
         Tray.Initialize();
 
-        if (!Settings.IsConfigured)
-            Tray.ShowSettings();
+        // Настройки намеренно не открываются автоматически. Трей должен
+        // продолжать работать, даже если окно настройки не удалось создать.
     }
 
     private void CreateLifetimeWindow()
