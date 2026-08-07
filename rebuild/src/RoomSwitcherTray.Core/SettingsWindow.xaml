@@ -1,0 +1,98 @@
+<Window
+    x:Class="RoomSwitcherTray.Core.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Width="760" MaxWidth="760" Margin="40,32,40,28" Spacing="20">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Room Switcher Tray"
+                               Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock Text="Настройте два сценария переключения"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Style="{ThemeResource BodyTextBlockStyle}" />
+                </StackPanel>
+
+                <InfoBar x:Name="StatusBar"
+                         IsOpen="False"
+                         IsClosable="True" />
+
+                <Border Padding="24"
+                        CornerRadius="8"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Сценарий 1"
+                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBox x:Name="Scenario1Name"
+                                 Header="Название"
+                                 PlaceholderText="Например, Компьютер" />
+                        <ComboBox x:Name="Scenario1Display"
+                                  Header="Дисплей"
+                                  HorizontalAlignment="Stretch"
+                                  PlaceholderText="Выберите дисплей" />
+                        <ComboBox x:Name="Scenario1Audio"
+                                  Header="Аудиоустройство"
+                                  HorizontalAlignment="Stretch"
+                                  PlaceholderText="Выберите аудиоустройство" />
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="24"
+                        CornerRadius="8"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Сценарий 2"
+                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBox x:Name="Scenario2Name"
+                                 Header="Название"
+                                 PlaceholderText="Например, Телевизор" />
+                        <ComboBox x:Name="Scenario2Display"
+                                  Header="Дисплей"
+                                  HorizontalAlignment="Stretch"
+                                  PlaceholderText="Выберите дисплей" />
+                        <ComboBox x:Name="Scenario2Audio"
+                                  Header="Аудиоустройство"
+                                  HorizontalAlignment="Stretch"
+                                  PlaceholderText="Выберите аудиоустройство" />
+                    </StackPanel>
+                </Border>
+
+                <Button x:Name="RefreshButton"
+                        Content="Обновить список устройств"
+                        HorizontalAlignment="Left"
+                        Click="RefreshButton_Click" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="1"
+                Padding="24,16"
+                BorderThickness="0,1,0,0"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="12">
+                <Button Content="Закрыть"
+                        MinWidth="120"
+                        Click="CloseButton_Click" />
+                <Button x:Name="SaveButton"
+                        Content="Сохранить"
+                        MinWidth="120"
+                        Style="{ThemeResource AccentButtonStyle}"
+                        Click="SaveButton_Click" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

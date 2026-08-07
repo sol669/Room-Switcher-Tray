@@ -1,0 +1,130 @@
+using System.Runtime.InteropServices;
+
+namespace RoomSwitcherTray.Core.Interop;
+
+internal static class DisplayNative
+{
+    internal const uint QDC_ALL_PATHS = 0x00000001;
+    internal const uint DISPLAYCONFIG_PATH_ACTIVE = 0x00000001;
+    internal const uint DISPLAYCONFIG_PATH_MODE_IDX_INVALID = 0xFFFFFFFF;
+    internal const uint SDC_TOPOLOGY_INTERNAL = 0x00000001;
+    internal const uint SDC_USE_SUPPLIED_DISPLAY_CONFIG = 0x00000020;
+    internal const uint SDC_VALIDATE = 0x00000040;
+    internal const uint SDC_APPLY = 0x00000080;
+    internal const uint SDC_SAVE_TO_DATABASE = 0x00000200;
+    internal const uint SDC_ALLOW_CHANGES = 0x00000400;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LUID
+    {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RATIONAL { public uint Numerator; public uint Denominator; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PATH_SOURCE_INFO
+    {
+        public LUID adapterId;
+        public uint id;
+        public uint modeInfoIdx;
+        public uint statusFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PATH_TARGET_INFO
+    {
+        public LUID adapterId;
+        public uint id;
+        public uint modeInfoIdx;
+        public uint outputTechnology;
+        public uint rotation;
+        public uint scaling;
+        public RATIONAL refreshRate;
+        public uint scanLineOrdering;
+        [MarshalAs(UnmanagedType.Bool)] public bool targetAvailable;
+        public uint statusFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PATH_INFO
+    {
+        public PATH_SOURCE_INFO sourceInfo;
+        public PATH_TARGET_INFO targetInfo;
+        public uint flags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct POINTL { public int x; public int y; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct REGION { public uint cx; public uint cy; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct VIDEO_SIGNAL_INFO
+    {
+        public ulong pixelRate;
+        public RATIONAL hSyncFreq;
+        public RATIONAL vSyncFreq;
+        public REGION activeSize;
+        public REGION totalSize;
+        public uint videoStandard;
+        public uint scanLineOrdering;
+    }
+    [StructLayout(LayoutKind.Sequential)] internal struct TARGET_MODE { public VIDEO_SIGNAL_INFO signal; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SOURCE_MODE
+    {
+        public uint width;
+        public uint height;
+        public uint pixelFormat;
+        public POINTL position;
+    }
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct MODE_UNION
+    {
+        [FieldOffset(0)] public TARGET_MODE target;
+        [FieldOffset(0)] public SOURCE_MODE source;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MODE_INFO
+    {
+        public uint infoType;
+        public uint id;
+        public LUID adapterId;
+        public MODE_UNION mode;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DEVICE_INFO_HEADER
+    {
+        public uint type;
+        public uint size;
+        public LUID adapterId;
+        public uint id;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct TARGET_DEVICE_NAME
+    {
+        public DEVICE_INFO_HEADER header;
+        public uint flags;
+        public uint outputTechnology;
+        public ushort edidManufactureId;
+        public ushort edidProductCodeId;
+        public uint connectorInstance;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string monitorFriendlyDeviceName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string monitorDevicePath;
+    }
+
+    [DllImport("user32.dll")]
+    internal static extern int GetDisplayConfigBufferSizes(uint flags, out uint pathCount, out uint modeCount);
+    [DllImport("user32.dll")]
+    internal static extern int QueryDisplayConfig(uint flags, ref uint pathCount,
+        [Out] PATH_INFO[] paths, ref uint modeCount, [Out] MODE_INFO[] modes, nint topologyId);
+    [DllImport("user32.dll")]
+    internal static extern int SetDisplayConfig(uint pathCount, [In] PATH_INFO[] paths,
+        uint modeCount, [In] MODE_INFO[]? modes, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    internal static extern int DisplayConfigGetDeviceInfo(ref TARGET_DEVICE_NAME request);
+}
