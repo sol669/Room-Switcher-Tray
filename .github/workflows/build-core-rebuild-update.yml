@@ -1,0 +1,65 @@
+name: Build core rebuild with update
+
+on:
+  push:
+    branches:
+      - codex/core-rebuild
+    paths:
+      - rebuild/**
+      - .github/workflows/build-core-rebuild-update.yml
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish self-contained test build
+        run: >-
+          dotnet publish rebuild/src/RoomSwitcherTray.Core/RoomSwitcherTray.Core.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:WindowsAppSDKSelfContained=true
+          -o artifacts/Room-Switcher-Tray-Core
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Room-Switcher-Tray-Core-Rebuild-win-x64
+          path: artifacts/Room-Switcher-Tray-Core/**
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Prepare update-only package
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE 'artifacts/Room-Switcher-Tray-Core'
+          $target = Join-Path $env:GITHUB_WORKSPACE 'artifacts/Room-Switcher-Tray-Update'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Get-ChildItem -LiteralPath $source -File -Filter 'RoomSwitcherTray*' |
+            Copy-Item -Destination $target
+          Get-ChildItem -LiteralPath $source -File -Filter '*.pri' -ErrorAction SilentlyContinue |
+            Copy-Item -Destination $target
+          $assets = Join-Path $source 'Assets'
+          if (Test-Path -LiteralPath $assets) {
+            Copy-Item -LiteralPath $assets -Destination $target -Recurse
+          }
+
+      - name: Upload update-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Room-Switcher-Tray-Update-win-x64
+          path: artifacts/Room-Switcher-Tray-Update/**
+          if-no-files-found: error
+          compression-level: 9
