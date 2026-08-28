@@ -106,7 +106,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "SystemName") => "System name",
         (true, "FriendlyName") => "Name in RoomSwitcher", (true, "SaveName") => "Save name",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.12 · sol669 ·",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.13 · sol669 ·",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -117,7 +117,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "SystemName") => "Системное имя",
         (false, "FriendlyName") => "Имя в RoomSwitcher", (false, "SaveName") => "Сохранить имя",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.12 · sol669 ·",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.13 · sol669 ·",
         _ => key
     };
 
@@ -127,7 +127,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _navButtons.Clear();
         _root.RowDefinitions.Clear(); _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var main = new Grid(); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) }); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var menu = new StackPanel { Spacing = 5, Margin = new Thickness(20, 10, 16, 12) };
+        var menu = new StackPanel { Spacing = 5, Margin = new Thickness(20, 15, 16, 12) };
         menu.Children.Add(new TextBlock { Text = T("Settings"), FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 0, 36) });
         menu.Children.Add(NavButton(T("General"), "general"));
         menu.Children.Add(NavButton(T("Scenarios"), "scenarios"));
@@ -141,8 +141,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         footerInfo.Children.Add(new TextBlock { Text = T("Footer"), VerticalAlignment = VerticalAlignment.Center });
         footerInfo.Children.Add(new HyperlinkButton { Content = "GitHub", NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray"), Padding = new Thickness(0) });
         var footerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        var cancel = new Button { Content = T("Cancel"), MinWidth = 110 }; ApplyControlStyle(cancel, "DefaultButtonStyle"); cancel.Click += (_, _) => Close();
-        var save = new Button { Content = T("Save"), MinWidth = 110 }; ApplyControlStyle(save, "AccentButtonStyle"); save.Click += (_, _) => { if (_currentPage == "general") SaveGeneral(); };
+        var cancel = new Button { Content = T("Cancel"), MinWidth = 110 }; ApplyControlStyle(cancel, "RoomDefaultButtonStyle"); cancel.Click += (_, _) => Close();
+        var save = new Button { Content = T("Save"), MinWidth = 110 }; ApplyControlStyle(save, "RoomAccentButtonStyle"); save.Click += (_, _) => { if (_currentPage == "general") SaveGeneral(); };
         footerButtons.Children.Add(cancel); footerButtons.Children.Add(save); Grid.SetColumn(footerButtons, 1);
         footer.Children.Add(footerInfo); footer.Children.Add(footerButtons);
         Grid.SetRow(footer, 1);
@@ -230,25 +230,16 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private ComboBox SettingsComboBox(ComboBox comboBox)
     {
         comboBox.Width = 280;
-        comboBox.Height = 34;
         comboBox.HorizontalAlignment = HorizontalAlignment.Stretch;
         comboBox.VerticalAlignment = VerticalAlignment.Center;
-        comboBox.CornerRadius = new CornerRadius(4);
-        if (Application.Current.Resources.TryGetValue("DefaultComboBoxStyle", out object? style) && style is Style comboBoxStyle)
-            comboBox.Style = comboBoxStyle;
-        comboBox.BorderThickness = new Thickness(0);
-        comboBox.Background = ThemeBrush("ControlFillColorDefaultBrush", IsDark() ? Color.FromArgb(255, 50, 50, 53) : Color.FromArgb(255, 249, 249, 249));
+        ApplyControlStyle(comboBox, "RoomSettingsComboBoxStyle");
         return comboBox;
     }
 
     private Button SettingsButton(Button button)
     {
-        ApplyControlStyle(button, "DefaultButtonStyle");
-        button.Height = 34;
+        ApplyControlStyle(button, "RoomHotkeyButtonStyle");
         button.VerticalAlignment = VerticalAlignment.Center;
-        button.CornerRadius = new CornerRadius(4);
-        button.BorderThickness = new Thickness(0);
-        button.Background = ThemeBrush("ControlFillColorDefaultBrush", IsDark() ? Color.FromArgb(255, 50, 50, 53) : Color.FromArgb(255, 249, 249, 249));
         return button;
     }
 
@@ -281,16 +272,12 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         return SettingsCard(grid);
     }
 
-    private Border SettingsCard(Grid content) => new()
+    private Border SettingsCard(Grid content)
     {
-        Child = content,
-        Background = ThemeBrush("CardBackgroundFillColorDefaultBrush", IsDark() ? Color.FromArgb(255, 45, 45, 49) : Color.FromArgb(255, 250, 250, 250)),
-        BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush", IsDark() ? Color.FromArgb(255, 55, 55, 60) : Color.FromArgb(255, 225, 225, 225)),
-        BorderThickness = new Thickness(1),
-        CornerRadius = new CornerRadius(8),
-        MinHeight = 46,
-        Padding = new Thickness(14, 5, 14, 5)
-    };
+        var card = new Border { Child = content };
+        ApplyControlStyle(card, "RoomSettingsCardStyle");
+        return card;
+    }
 
     private void UpdateAutostartState()
     {
