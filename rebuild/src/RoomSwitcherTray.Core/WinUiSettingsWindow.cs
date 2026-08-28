@@ -106,7 +106,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "SystemName") => "System name",
         (true, "FriendlyName") => "Name in RoomSwitcher", (true, "SaveName") => "Save name",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.11 · sol669 ·",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.12 · sol669 ·",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -117,7 +117,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "SystemName") => "Системное имя",
         (false, "FriendlyName") => "Имя в RoomSwitcher", (false, "SaveName") => "Сохранить имя",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.11 · sol669 ·",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.12 · sol669 ·",
         _ => key
     };
 
@@ -141,8 +141,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         footerInfo.Children.Add(new TextBlock { Text = T("Footer"), VerticalAlignment = VerticalAlignment.Center });
         footerInfo.Children.Add(new HyperlinkButton { Content = "GitHub", NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray"), Padding = new Thickness(0) });
         var footerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        var cancel = new Button { Content = T("Cancel"), MinWidth = 110 }; cancel.Click += (_, _) => Close();
-        var save = new Button { Content = T("Save"), MinWidth = 110, Background = AccentBrush(), Foreground = AccentTextBrush() }; save.Click += (_, _) => { if (_currentPage == "general") SaveGeneral(); };
+        var cancel = new Button { Content = T("Cancel"), MinWidth = 110 }; ApplyControlStyle(cancel, "DefaultButtonStyle"); cancel.Click += (_, _) => Close();
+        var save = new Button { Content = T("Save"), MinWidth = 110 }; ApplyControlStyle(save, "AccentButtonStyle"); save.Click += (_, _) => { if (_currentPage == "general") SaveGeneral(); };
         footerButtons.Children.Add(cancel); footerButtons.Children.Add(save); Grid.SetColumn(footerButtons, 1);
         footer.Children.Add(footerInfo); footer.Children.Add(footerButtons);
         Grid.SetRow(footer, 1);
@@ -243,12 +243,19 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private Button SettingsButton(Button button)
     {
+        ApplyControlStyle(button, "DefaultButtonStyle");
         button.Height = 34;
         button.VerticalAlignment = VerticalAlignment.Center;
         button.CornerRadius = new CornerRadius(4);
         button.BorderThickness = new Thickness(0);
         button.Background = ThemeBrush("ControlFillColorDefaultBrush", IsDark() ? Color.FromArgb(255, 50, 50, 53) : Color.FromArgb(255, 249, 249, 249));
         return button;
+    }
+
+    private static void ApplyControlStyle(FrameworkElement control, string resourceKey)
+    {
+        if (Application.Current.Resources.TryGetValue(resourceKey, out object? style) && style is Style controlStyle)
+            control.Style = controlStyle;
     }
     private Border SettingRow(string title, FrameworkElement control)
         => SettingRow(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center }, control);
