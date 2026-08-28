@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Text;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -10,6 +11,7 @@ using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.System;
 using Windows.UI;
+using Windows.UI.ViewManagement;
 
 namespace RoomSwitcherTray.Core;
 
@@ -43,6 +45,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _scenarios = settings.Current.Scenarios.Select(item => item.Clone()).ToList();
         _root.IsTabStop = true;
         Title = "RoomSwitcher";
+        try { SystemBackdrop = new MicaBackdrop(); } catch { }
         // AppWindow uses physical pixels.  A wider fixed size leaves room for the
         // RoomSwitcher navigation pane and the Shutdown-style horizontal rows,
         // including on Windows installations with high display scaling.
@@ -61,6 +64,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         WindowId id = Win32Interop.GetWindowIdFromWindow(hwnd);
         AppWindow window = AppWindow.GetFromWindowId(id);
+        NativeTheme.Apply(hwnd, _settings.Current.Theme);
         const int logicalWidth = 920;  // Shutdown's 680 plus RoomSwitcher's navigation pane.
         const int logicalHeight = 810;
         double scale = Math.Max(1, GetDpiForWindow(hwnd) / 96.0);
@@ -98,7 +102,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "SystemName") => "System name",
         (true, "FriendlyName") => "Name in RoomSwitcher", (true, "SaveName") => "Save name",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Footer") => "GitHub · RoomSwitcher · test build",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Footer") => "RoomSwitcher 0.7.6 · sol669 ·",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -109,58 +113,73 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "SystemName") => "Системное имя",
         (false, "FriendlyName") => "Имя в RoomSwitcher", (false, "SaveName") => "Сохранить имя",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Footer") => "GitHub · RoomSwitcher · тестовая сборка",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Footer") => "RoomSwitcher 0.7.6 · sol669 ·",
         _ => key
     };
 
     private void BuildShell(string page)
     {
+        _currentPage = page;
         _root.RowDefinitions.Clear(); _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var main = new Grid(); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) }); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var menu = new StackPanel { Spacing = 8, Margin = new Thickness(16, 28, 12, 12) };
-        menu.Children.Add(new TextBlock { Text = "RoomSwitcher", FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 0, 14) });
-        menu.Children.Add(NavButton(T("General"), "general", Symbol.Setting));
-        menu.Children.Add(NavButton(T("Scenarios"), "scenarios", Symbol.List));
-        menu.Children.Add(NavButton(T("Devices"), "devices", Symbol.Folder));
+        var menu = new StackPanel { Spacing = 6, Margin = new Thickness(24, 28, 16, 12) };
+        menu.Children.Add(new TextBlock { Text = "RoomSwitcher", FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 0, 16) });
+        menu.Children.Add(NavButton(T("General"), "general"));
+        menu.Children.Add(NavButton(T("Scenarios"), "scenarios"));
+        menu.Children.Add(NavButton(T("Devices"), "devices"));
         Grid.SetColumn(menu, 0); main.Children.Add(menu); Grid.SetColumn(_pageHost, 1); main.Children.Add(_pageHost);
         Grid.SetRow(main, 0);
-        var footer = new Grid { Margin = new Thickness(24, 10, 24, 20) };
+        var footer = new Grid { Margin = new Thickness(244, 10, 24, 20) };
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var footerText = new TextBlock { Text = T("Footer"), Opacity = .65, VerticalAlignment = VerticalAlignment.Center };
+        var footerInfo = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center, Opacity = .68 };
+        footerInfo.Children.Add(new TextBlock { Text = T("Footer"), VerticalAlignment = VerticalAlignment.Center });
+        footerInfo.Children.Add(new HyperlinkButton { Content = "GitHub", NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray"), Padding = new Thickness(0) });
         var footerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        var cancel = new Button { Content = T("Cancel"), MinWidth = 130 }; cancel.Click += (_, _) => Close();
-        var save = new Button { Content = T("Save"), MinWidth = 150 }; save.Click += (_, _) => { if (_currentPage == "general") SaveGeneral(); };
+        var cancel = new Button { Content = T("Cancel"), MinWidth = 110 }; cancel.Click += (_, _) => Close();
+        var save = new Button { Content = T("Save"), MinWidth = 110, Background = AccentBrush(), Foreground = AccentTextBrush() }; save.Click += (_, _) => { if (_currentPage == "general") SaveGeneral(); };
         footerButtons.Children.Add(cancel); footerButtons.Children.Add(save); Grid.SetColumn(footerButtons, 1);
-        footer.Children.Add(footerText); footer.Children.Add(footerButtons);
+        footer.Children.Add(footerInfo); footer.Children.Add(footerButtons);
         Grid.SetRow(footer, 1);
         _root.Children.Clear(); _root.Children.Add(main); _root.Children.Add(footer);
         _root.KeyDown -= RootKeyDown; _root.KeyDown += RootKeyDown;
         Content = _root;
-        _currentPage = page;
         ShowPage(page);
         ApplyTheme();
     }
 
-    private Button NavButton(string text, string page, Symbol symbol)
+    private Button NavButton(string text, string page)
     {
-        var button = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 }; row.Children.Add(new SymbolIcon(symbol)); row.Children.Add(new TextBlock { Text = text }); button.Content = row; button.Click += (_, _) => ShowPage(page); return button;
+        bool selected = page == _currentPage;
+        var button = new Button
+        {
+            Content = text,
+            Height = 42,
+            Padding = new Thickness(16, 0, 16, 0),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Background = selected ? AccentBrush() : new SolidColorBrush(Colors.Transparent),
+            Foreground = selected ? AccentTextBrush() : TextBrush()
+        };
+        button.Click += (_, _) => BuildShell(page);
+        return button;
     }
     private void ShowPage(string page)
     {
         _currentPage = page;
         _pageHost.Content = page switch { "scenarios" => BuildScenariosPage(), "devices" => BuildDevicesPage(), _ => BuildGeneralPage() };
     }
-    private static StackPanel Panel() => new() { Spacing = 12, Margin = new Thickness(32, 28, 32, 12) };
-    private static TextBlock Heading(string text) => new() { Text = text, FontSize = 26, FontWeight = FontWeights.SemiBold };
+    private static StackPanel Panel() => new() { Spacing = 8, Margin = new Thickness(24, 28, 24, 12) };
+    private static TextBlock Heading(string text) => new() { Text = text, FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
     private static TextBlock Label(string text) => new() { Text = text, Opacity = .72 };
 
     private UIElement BuildGeneralPage()
     {
         var panel = Panel(); panel.Children.Add(Heading(T("General")));
         panel.Children.Add(Section(T("Behavior")));
-        _startupChoiceBox = new ComboBox { DisplayMemberPath = "Name", Width = 360 };
+        _startupChoiceBox = new ComboBox { DisplayMemberPath = "Name", Width = 240, CornerRadius = new CornerRadius(4) };
         var startupChoices = new List<StartupChoice> { new(null, T("LastLoaded")) };
         startupChoices.AddRange(_scenarios.Where(s => s.IsComplete).Select(s => new StartupChoice(s.Id, s.Name)));
         _startupChoiceBox.ItemsSource = startupChoices;
@@ -168,31 +187,47 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             ? Math.Max(0, startupChoices.FindIndex(choice => choice.Id == _settings.Current.StartupScenarioId)) : 0;
         panel.Children.Add(SettingRow(T("StartupScenario"), _startupChoiceBox));
         var hotkeyLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, HorizontalAlignment = HorizontalAlignment.Right };
-        var capture = new Button { Content = T("Change"), MinWidth = 150 }; capture.Click += (_, _) => BeginCapture(capture); hotkeyLine.Children.Add(capture);
+        var capture = new Button { Content = T("Change"), MinWidth = 110, CornerRadius = new CornerRadius(4) }; capture.Click += (_, _) => BeginCapture(capture); hotkeyLine.Children.Add(capture);
         panel.Children.Add(SettingRow($"{T("Hotkey")} — {TrayService.FormatHotKey(_settings.Current.SwitchScenarioHotKey)}", hotkeyLine));
         _hotKeyHint = new TextBlock { Opacity = .72, Margin = new Thickness(26, -4, 0, 2) }; panel.Children.Add(_hotKeyHint);
         panel.Children.Add(Section(T("System")));
         _autostartToggle = new ToggleSwitch { IsOn = StartupService.IsEnabled(), OnContent = English ? "On" : "Вкл.", OffContent = English ? "Off" : "Откл." };
         panel.Children.Add(SettingRow(T("Autostart"), _autostartToggle));
-        _themeBox = new ComboBox { ItemsSource = English ? new[] { "Like Windows", "Light", "Dark" } : new[] { "Как в Windows", "Светлая", "Тёмная" }, SelectedIndex = (int)_settings.Current.Theme, Width = 360 };
+        _themeBox = new ComboBox { ItemsSource = English ? new[] { "Like Windows", "Light", "Dark" } : new[] { "Как в Windows", "Светлая", "Тёмная" }, SelectedIndex = (int)_settings.Current.Theme, Width = 240, CornerRadius = new CornerRadius(4) };
         panel.Children.Add(SettingRow(T("Theme"), _themeBox));
-        _languageBox = new ComboBox { ItemsSource = new[] { "Русский", "English" }, SelectedIndex = (int)_settings.Current.Language, Width = 360 };
+        _languageBox = new ComboBox { ItemsSource = new[] { "Русский", "English" }, SelectedIndex = (int)_settings.Current.Language, Width = 240, CornerRadius = new CornerRadius(4) };
         panel.Children.Add(SettingRow(T("Language"), _languageBox));
         return panel;
     }
 
-    private static TextBlock Section(string text) => new() { Text = text.ToUpperInvariant(), FontSize = 15, FontWeight = FontWeights.SemiBold, Opacity = .7, Margin = new Thickness(2, 14, 0, 2) };
-    private static Border SettingRow(string title, FrameworkElement control)
+    private static TextBlock Section(string text) => new() { Text = text.ToUpperInvariant(), FontSize = 12, FontWeight = FontWeights.SemiBold, Opacity = .65, Margin = new Thickness(0, 8, 0, 0) };
+    private Border SettingRow(string title, FrameworkElement control)
     {
-        var grid = new Grid { Padding = new Thickness(24, 12, 24, 12), MinHeight = 66 };
+        var grid = new Grid { Padding = new Thickness(16, 8, 16, 8), MinHeight = 56 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(new TextBlock { Text = title, FontSize = 18, VerticalAlignment = VerticalAlignment.Center });
+        grid.Children.Add(new TextBlock { Text = title, FontSize = 16, VerticalAlignment = VerticalAlignment.Center });
         Grid.SetColumn(control, 1); control.VerticalAlignment = VerticalAlignment.Center; grid.Children.Add(control);
-        return new Border { Child = grid, CornerRadius = new CornerRadius(12), Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Color.FromArgb(255, 43, 43, 48)), Margin = new Thickness(0, 0, 0, 2) };
+        return new Border { Child = grid, CornerRadius = new CornerRadius(8), Background = CardBrush(), BorderBrush = CardStrokeBrush(), BorderThickness = new Thickness(1) };
     }
 
-    private void ApplyTheme() => _root.RequestedTheme = _settings.Current.Theme switch { AppThemeMode.Light => ElementTheme.Light, AppThemeMode.Dark => ElementTheme.Dark, _ => ElementTheme.Default };
+    private void ApplyTheme()
+    {
+        _root.RequestedTheme = _settings.Current.Theme switch { AppThemeMode.Light => ElementTheme.Light, AppThemeMode.Dark => ElementTheme.Dark, _ => ElementTheme.Default };
+        NativeTheme.Apply(WinRT.Interop.WindowNative.GetWindowHandle(this), _settings.Current.Theme);
+    }
+
+    private bool IsDark() => _settings.Current.Theme == AppThemeMode.Dark || (_settings.Current.Theme == AppThemeMode.System && NativeTheme.IsSystemDark());
+    private SolidColorBrush CardBrush() => new(IsDark() ? Color.FromArgb(220, 45, 45, 49) : Color.FromArgb(235, 250, 250, 250));
+    private SolidColorBrush CardStrokeBrush() => new(IsDark() ? Color.FromArgb(255, 55, 55, 60) : Color.FromArgb(255, 225, 225, 225));
+    private static SolidColorBrush AccentBrush() => new(new UISettings().GetColorValue(UIColorType.Accent));
+    private static SolidColorBrush AccentTextBrush()
+    {
+        Color accent = new UISettings().GetColorValue(UIColorType.Accent);
+        double luminance = .299 * accent.R + .587 * accent.G + .114 * accent.B;
+        return new SolidColorBrush(luminance > 165 ? Colors.Black : Colors.White);
+    }
+    private SolidColorBrush TextBrush() => new(IsDark() ? Colors.White : Colors.Black);
     private void SaveGeneral()
     {
         if (_startupChoiceBox?.SelectedItem is not StartupChoice startup || _autostartToggle is null || _themeBox is null || _languageBox is null) return;
