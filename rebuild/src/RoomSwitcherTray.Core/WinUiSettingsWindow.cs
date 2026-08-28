@@ -106,7 +106,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "SystemName") => "System name",
         (true, "FriendlyName") => "Name in RoomSwitcher", (true, "SaveName") => "Save name",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Footer") => "RoomSwitcher 0.7.8 · sol669 ·",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.9 · sol669 ·",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -117,7 +117,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "SystemName") => "Системное имя",
         (false, "FriendlyName") => "Имя в RoomSwitcher", (false, "SaveName") => "Сохранить имя",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Footer") => "RoomSwitcher 0.7.8 · sol669 ·",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.9 · sol669 ·",
         _ => key
     };
 
@@ -127,8 +127,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _navButtons.Clear();
         _root.RowDefinitions.Clear(); _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var main = new Grid(); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) }); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var menu = new StackPanel { Spacing = 5, Margin = new Thickness(20, 28, 16, 12) };
-        menu.Children.Add(new TextBlock { Text = "RoomSwitcher", FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(12, 0, 0, 16) });
+        var menu = new StackPanel { Spacing = 5, Margin = new Thickness(20, 20, 16, 12) };
+        menu.Children.Add(new TextBlock { Text = T("Settings"), FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 0, 36) });
         menu.Children.Add(NavButton(T("General"), "general"));
         menu.Children.Add(NavButton(T("Scenarios"), "scenarios"));
         menu.Children.Add(NavButton(T("Devices"), "devices"));
@@ -159,9 +159,9 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         var button = new Button
         {
             Content = text,
-            Height = 36,
-            Padding = new Thickness(12, 0, 12, 0),
-            CornerRadius = new CornerRadius(4),
+            Height = 46,
+            Padding = new Thickness(14, 0, 14, 0),
+            CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left,
@@ -198,9 +198,9 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private UIElement BuildGeneralPage()
     {
-        var panel = Panel(); panel.Children.Add(Heading(T("General")));
-        panel.Children.Add(Section(T("Behavior")));
-        _startupChoiceBox = new ComboBox { DisplayMemberPath = "Name", Width = 280, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var panel = Panel();
+        panel.Children.Add(Section(T("Behavior"), first: true));
+        _startupChoiceBox = SettingsComboBox(new ComboBox { DisplayMemberPath = "Name" });
         var startupChoices = new List<StartupChoice> { new(null, T("LastLoaded")) };
         startupChoices.AddRange(_scenarios.Where(s => s.IsComplete).Select(s => new StartupChoice(s.Id, s.Name)));
         _startupChoiceBox.ItemsSource = startupChoices;
@@ -218,14 +218,27 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _autostartToggle.Toggled += (_, _) => UpdateAutostartState();
         UpdateAutostartState();
         panel.Children.Add(ToggleSettingRow(T("Autostart"), _autostartState, _autostartToggle));
-        _themeBox = new ComboBox { ItemsSource = English ? new[] { "Like Windows", "Light", "Dark" } : new[] { "Как в Windows", "Светлая", "Тёмная" }, SelectedIndex = (int)_settings.Current.Theme, Width = 280, HorizontalAlignment = HorizontalAlignment.Stretch };
+        _themeBox = SettingsComboBox(new ComboBox { ItemsSource = English ? new[] { "Like Windows", "Light", "Dark" } : new[] { "Как в Windows", "Светлая", "Тёмная" }, SelectedIndex = (int)_settings.Current.Theme });
         panel.Children.Add(SettingRow(T("Theme"), _themeBox));
-        _languageBox = new ComboBox { ItemsSource = new[] { "Русский", "English" }, SelectedIndex = (int)_settings.Current.Language, Width = 280, HorizontalAlignment = HorizontalAlignment.Stretch };
+        _languageBox = SettingsComboBox(new ComboBox { ItemsSource = new[] { "Русский", "English" }, SelectedIndex = (int)_settings.Current.Language });
         panel.Children.Add(SettingRow(T("Language"), _languageBox));
         return panel;
     }
 
-    private static TextBlock Section(string text) => new() { Text = text.ToUpperInvariant(), FontSize = 12, FontWeight = FontWeights.SemiBold, Opacity = .68, Margin = new Thickness(2, 13, 0, 1) };
+    private static TextBlock Section(string text, bool first = false) => new() { Text = text.ToUpperInvariant(), FontSize = 12, FontWeight = FontWeights.SemiBold, Opacity = .68, Margin = new Thickness(2, first ? 0 : 13, 0, 1) };
+
+    private ComboBox SettingsComboBox(ComboBox comboBox)
+    {
+        comboBox.Width = 280;
+        comboBox.Height = 34;
+        comboBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+        comboBox.VerticalAlignment = VerticalAlignment.Center;
+        comboBox.CornerRadius = new CornerRadius(4);
+        comboBox.BorderThickness = new Thickness(1);
+        comboBox.Background = ThemeBrush("ControlFillColorDefaultBrush", IsDark() ? Color.FromArgb(255, 50, 50, 53) : Color.FromArgb(255, 249, 249, 249));
+        comboBox.BorderBrush = ThemeBrush("ControlStrokeColorDefaultBrush", IsDark() ? Color.FromArgb(255, 82, 82, 86) : Color.FromArgb(255, 160, 160, 160));
+        return comboBox;
+    }
     private Border SettingRow(string title, FrameworkElement control)
         => SettingRow(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center }, control);
     private Border SettingRow(FrameworkElement title, FrameworkElement control)
