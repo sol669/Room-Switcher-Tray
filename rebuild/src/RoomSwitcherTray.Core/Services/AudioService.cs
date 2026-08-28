@@ -72,6 +72,9 @@ public sealed class AudioService
         finally { Release(volume); }
     }
 
+    public string? GetDefaultEndpointId() => GetRenderDevices()
+        .FirstOrDefault(item => item.IsDefault && item.IsActive)?.Id;
+
     public void SetDefaultEndpointMuted(bool muted)
     {
         string? deviceId = GetRenderDevices().FirstOrDefault(item => item.IsDefault && item.IsActive)?.Id;

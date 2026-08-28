@@ -45,6 +45,8 @@ public sealed class AppSettings
     public bool StartWithWindows { get; set; }
     public StartupScenarioMode StartupScenarioMode { get; set; }
     public Guid? StartupScenarioId { get; set; }
+    public HotKeyDefinition SwitchScenarioHotKey { get; set; } = HotKeyDefinition.Default;
+    public Dictionary<string, string> DeviceAliases { get; set; } = [];
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LegacyScenarioDefinition? Scenario1 { get; set; }
@@ -54,6 +56,17 @@ public sealed class AppSettings
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int ActiveScenario { get; set; }
+}
+
+public sealed class HotKeyDefinition
+{
+    public const uint Control = 0x0002;
+    public const uint Shift = 0x0004;
+    public const uint Alt = 0x0001;
+    public const uint Win = 0x0008;
+    public uint Modifiers { get; set; } = Control;
+    public uint VirtualKey { get; set; } = 0x20;
+    public static HotKeyDefinition Default => new();
 }
 
 public sealed class LegacyScenarioDefinition

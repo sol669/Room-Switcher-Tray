@@ -9,12 +9,13 @@ namespace RoomSwitcherTray.Core;
 public sealed class SettingsWindow : IDisposable
 {
     private const string WindowClass = "sol669.RoomSwitcher.Core.Settings";
-    private const int IdNavGeneral = 101, IdNavScenarios = 102;
-    private const int IdStartWithWindows = 111, IdStartupMode = 112, IdStartupScenario = 113, IdSaveGeneral = 114;
+    private const int IdNavGeneral = 101, IdNavScenarios = 102, IdNavDevices = 103;
+    private const int IdStartWithWindows = 111, IdStartupMode = 112, IdStartupScenario = 113, IdSaveGeneral = 114, IdCaptureHotKey = 115;
     private const int IdScenarioList = 201, IdCreate = 202, IdDelete = 203;
     private const int IdName = 301, IdMonitor1 = 311, IdAudio = 320, IdVolume = 321;
     private const int IdRefresh = 401, IdSave = 402, IdSaveApply = 403, IdSaveOpenDisplay = 404, IdClose = 405;
-    private const uint WM_COMMAND = 0x0111, WM_CLOSE = 0x0010, WM_NCCREATE = 0x0081, WM_NCDESTROY = 0x0082, WM_SETFONT = 0x0030;
+    private const int IdDeviceList = 501, IdDeviceAlias = 502, IdSaveDeviceAlias = 503;
+    private const uint WM_COMMAND = 0x0111, WM_KEYDOWN = 0x0100, WM_CLOSE = 0x0010, WM_NCCREATE = 0x0081, WM_NCDESTROY = 0x0082, WM_SETFONT = 0x0030;
     private const uint CB_ADDSTRING = 0x0143, CB_GETCURSEL = 0x0147, CB_RESETCONTENT = 0x014B, CB_SETCURSEL = 0x014E;
     private const uint LB_ADDSTRING = 0x0180, LB_GETCURSEL = 0x0188, LB_RESETCONTENT = 0x0184, LB_SETCURSEL = 0x0186;
     private const uint BM_GETCHECK = 0x00F0, BM_SETCHECK = 0x00F1;
@@ -37,18 +38,21 @@ public sealed class SettingsWindow : IDisposable
     private readonly List<DisplayDevice>[] _displayOptions = [[], [], [], []];
     private readonly List<nint> _generalControls = [];
     private readonly List<nint> _scenarioControls = [];
+    private readonly List<nint> _deviceControls = [];
     private readonly List<Guid> _startupScenarioIds = [];
     private nint _window, _scenarioList, _name, _audio, _volume, _status, _refresh, _save, _saveApply, _saveOpenDisplay, _delete;
-    private nint _startWithWindows, _startupMode, _startupScenario;
+    private nint _startWithWindows, _startupMode, _startupScenario, _hotKey, _captureHotKey, _deviceList, _deviceAlias, _deviceSystemName;
     private GCHandle _selfHandle;
     private IReadOnlyList<DisplayDevice> _displays = [];
     private IReadOnlyList<AudioDevice> _audioDevices = [];
     private int _selectedIndex = -1;
-    private bool _loading, _devicesLoaded;
+    private bool _loading, _devicesLoaded, _capturingHotKey;
+    private List<(string Id, string SystemName, string Kind)> _deviceItems = [];
+    private int _selectedDeviceIndex = -1;
     private Page _page;
 
     public event EventHandler? Closed;
-    private enum Page { None, General, Scenarios }
+    private enum Page { None, General, Scenarios, Devices }
 
     public SettingsWindow(SettingsStore settings, TrayService tray)
     {
@@ -101,6 +105,7 @@ public sealed class SettingsWindow : IDisposable
         AddStatic("RoomSwitcher", 22, 22, 165, 25, font);
         AddControl("BUTTON", "Основные", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 22, 58, 165, 34, IdNavGeneral, font);
         AddControl("BUTTON", "Сценарии", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 22, 100, 165, 34, IdNavScenarios, font);
+        AddControl("BUTTON", "Устройства", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 22, 142, 165, 34, IdNavDevices, font);
 
         _page = Page.General;
         AddStatic("Основные настройки", 220, 22, 760, 26, font);
@@ -115,6 +120,11 @@ public sealed class SettingsWindow : IDisposable
             450, 196, 430, 180, IdStartupScenario, font);
         AddStatic("По умолчанию RoomSwitcher не меняет текущую конфигурацию экранов.\r\nВыбери другой режим, если при запуске нужно применить сценарий автоматически.",
             220, 248, 660, 54, font);
+        AddStatic("Горячая клавиша следующего сценария", 220, 330, 290, 22, font);
+        _hotKey = AddControl("EDIT", string.Empty, WS_CHILD | WS_VISIBLE, 520, 326, 235, 28, 0, font);
+        _captureHotKey = AddControl("BUTTON", "Изменить…", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 765, 326, 115, 28, IdCaptureHotKey, font);
+        AddStatic("Нажми «Изменить», затем сочетание с Ctrl, Alt, Shift или Win.\r\nНовая комбинация сразу станет активной, если она не занята другой программой.",
+            220, 368, 660, 42, font);
         AddControl("BUTTON", "Сохранить основные настройки", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
             670, 572, 210, 38, IdSaveGeneral, font);
 
@@ -147,6 +157,18 @@ public sealed class SettingsWindow : IDisposable
         _saveOpenDisplay = AddControl("BUTTON", "Сохранить и настроить экраны", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 705, 572, 180, 38, IdSaveOpenDisplay, font);
         _saveApply = AddControl("BUTTON", "Применить", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 895, 572, 85, 38, IdSaveApply, font);
 
+        _page = Page.Devices;
+        AddStatic("Устройства", 220, 22, 210, 26, font);
+        AddStatic("Выбери устройство и задай понятное имя. Системное имя не меняется.", 220, 58, 690, 24, font);
+        _deviceList = AddControl("LISTBOX", string.Empty, WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | WS_BORDER | LBS_NOTIFY,
+            220, 96, 360, 420, IdDeviceList, font);
+        AddStatic("Системное имя", 620, 110, 320, 22, font);
+        _deviceSystemName = AddStatic(string.Empty, 620, 140, 330, 48, font);
+        AddStatic("Понятное имя в RoomSwitcher", 620, 220, 320, 22, font);
+        _deviceAlias = AddControl("EDIT", string.Empty, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, 620, 250, 330, 28, IdDeviceAlias, font);
+        AddStatic("Оставь поле пустым, чтобы использовать системное имя.", 620, 290, 330, 38, font);
+        AddControl("BUTTON", "Сохранить имя", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 790, 480, 160, 38, IdSaveDeviceAlias, font);
+
         _page = Page.None;
         AddControl("BUTTON", "Закрыть", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 875, 620, 105, 32, IdClose, font);
     }
@@ -159,6 +181,7 @@ public sealed class SettingsWindow : IDisposable
         if (control != nint.Zero) SendMessage(control, WM_SETFONT, font, (nint)1);
         if (_page == Page.General) _generalControls.Add(control);
         else if (_page == Page.Scenarios) _scenarioControls.Add(control);
+        else if (_page == Page.Devices) _deviceControls.Add(control);
         return control;
     }
 
@@ -168,8 +191,10 @@ public sealed class SettingsWindow : IDisposable
         _page = page;
         foreach (nint control in _generalControls) ShowWindow(control, page == Page.General ? SW_SHOWNORMAL : SW_HIDE);
         foreach (nint control in _scenarioControls) ShowWindow(control, page == Page.Scenarios ? SW_SHOWNORMAL : SW_HIDE);
+        foreach (nint control in _deviceControls) ShowWindow(control, page == Page.Devices ? SW_SHOWNORMAL : SW_HIDE);
         if (page == Page.General) LoadGeneralSettings();
-        else ShowSelectedScenario();
+        else if (page == Page.Scenarios) ShowSelectedScenario();
+        else LoadDevices();
     }
 
     private void LoadGeneralSettings()
@@ -190,6 +215,7 @@ public sealed class SettingsWindow : IDisposable
         int selected = _startupScenarioIds.FindIndex(id => id == _settings.Current.StartupScenarioId);
         SendMessage(_startupScenario, CB_SETCURSEL, (nint)(selected >= 0 ? selected : 0), nint.Zero);
         UpdateStartupScenarioEnabled();
+        SetWindowText(_hotKey, TrayService.FormatHotKey(_settings.Current.SwitchScenarioHotKey));
     }
 
     private void UpdateStartupScenarioEnabled()
@@ -217,6 +243,77 @@ public sealed class SettingsWindow : IDisposable
             MessageBox(_window, "Основные настройки сохранены.", "RoomSwitcher", 0);
         }
         catch (Exception ex) { SettingsStore.Log(ex); MessageBox(_window, ex.Message, "RoomSwitcher", MB_ICONWARNING); }
+    }
+
+    private void BeginHotKeyCapture()
+    {
+        _capturingHotKey = true;
+        SetWindowText(_hotKey, "Нажмите сочетание…");
+        SetFocus(_window);
+    }
+
+    private void CaptureHotKey(uint virtualKey)
+    {
+        if (!_capturingHotKey) return;
+        if (virtualKey is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C) return;
+        uint modifiers = 0;
+        if (IsKeyDown(0x11)) modifiers |= HotKeyDefinition.Control;
+        if (IsKeyDown(0x12)) modifiers |= HotKeyDefinition.Alt;
+        if (IsKeyDown(0x10)) modifiers |= HotKeyDefinition.Shift;
+        if (IsKeyDown(0x5B) || IsKeyDown(0x5C)) modifiers |= HotKeyDefinition.Win;
+        var hotKey = new HotKeyDefinition { Modifiers = modifiers, VirtualKey = virtualKey };
+        if (!_tray.TryUpdateHotKey(hotKey, out string error))
+        {
+            _capturingHotKey = false;
+            SetWindowText(_hotKey, TrayService.FormatHotKey(_settings.Current.SwitchScenarioHotKey));
+            MessageBox(_window, error, "RoomSwitcher", MB_ICONWARNING);
+            return;
+        }
+        _settings.Current.SwitchScenarioHotKey = hotKey;
+        _settings.Save(); _tray.Refresh();
+        _capturingHotKey = false;
+        SetWindowText(_hotKey, TrayService.FormatHotKey(hotKey));
+    }
+
+    private void LoadDevices()
+    {
+        if (!_devicesLoaded) { SetWindowText(_deviceSystemName, "Ищу устройства…"); return; }
+        _deviceItems = _displays.Select(display => (Id: display.Id, SystemName: display.Name, Kind: "Монитор"))
+            .Concat(_audioDevices.Select(audio => (Id: audio.Id, SystemName: audio.DisplayName ?? audio.Name, Kind: "Аудио")))
+            .OrderBy(item => item.Kind).ThenBy(item => item.SystemName, StringComparer.CurrentCultureIgnoreCase).ToList();
+        _loading = true;
+        SendMessage(_deviceList, LB_RESETCONTENT, nint.Zero, nint.Zero);
+        foreach (var item in _deviceItems)
+            SendMessageString(_deviceList, LB_ADDSTRING, nint.Zero, $"{item.Kind}: {DeviceAliasService.NameFor(_settings.Current, item.Id, item.SystemName)}");
+        _selectedDeviceIndex = _deviceItems.Count > 0 ? Math.Clamp(_selectedDeviceIndex, 0, _deviceItems.Count - 1) : -1;
+        SendMessage(_deviceList, LB_SETCURSEL, (nint)_selectedDeviceIndex, nint.Zero);
+        _loading = false;
+        ShowSelectedDevice();
+    }
+
+    private void ShowSelectedDevice()
+    {
+        if (_selectedDeviceIndex < 0 || _selectedDeviceIndex >= _deviceItems.Count)
+        { SetWindowText(_deviceSystemName, "Устройства не найдены."); SetWindowText(_deviceAlias, string.Empty); EnableWindow(_deviceAlias, false); return; }
+        var item = _deviceItems[_selectedDeviceIndex];
+        SetWindowText(_deviceSystemName, item.SystemName);
+        _settings.Current.DeviceAliases.TryGetValue(item.Id, out string? alias);
+        SetWindowText(_deviceAlias, alias ?? string.Empty); EnableWindow(_deviceAlias, true);
+    }
+
+    private void SelectDevice()
+    {
+        if (_loading) return;
+        _selectedDeviceIndex = (int)SendMessage(_deviceList, LB_GETCURSEL, nint.Zero, nint.Zero);
+        ShowSelectedDevice();
+    }
+
+    private void SaveDeviceAlias()
+    {
+        if (_selectedDeviceIndex < 0 || _selectedDeviceIndex >= _deviceItems.Count) return;
+        var item = _deviceItems[_selectedDeviceIndex];
+        DeviceAliasService.Set(_settings.Current, item.Id, GetText(_deviceAlias));
+        _settings.Save(); _tray.Refresh(); LoadDevices();
     }
 
     private void ReloadScenarioList()
@@ -274,6 +371,7 @@ public sealed class SettingsWindow : IDisposable
             _audioDevices = await App.Audio.GetVisibleRenderDevicesAsync(_displays, _workingScenarios.Cast<ScenarioDefinition?>().ToArray());
             _devicesLoaded = true;
             if (_page == Page.Scenarios) ShowSelectedScenario();
+            else if (_page == Page.Devices) LoadDevices();
             SetWindowText(_status, _displays.Count == 0 || _audioDevices.Count == 0 ? "Не удалось найти все необходимые устройства." : string.Empty);
         }
         catch (Exception ex) { SettingsStore.Log(ex); SetWindowText(_status, $"Не удалось получить устройства: {ex.Message}"); }
@@ -292,7 +390,9 @@ public sealed class SettingsWindow : IDisposable
         if (optional) SendMessageString(combo, CB_ADDSTRING, nint.Zero, "Нет");
         for (int index = 0; index < options.Count; index++)
         {
-            SendMessageString(combo, CB_ADDSTRING, nint.Zero, options[index].ToString());
+            DisplayDevice device = options[index];
+            string name = DeviceAliasService.NameFor(_settings.Current, device.Id, device.Name);
+            SendMessageString(combo, CB_ADDSTRING, nint.Zero, device.IsActive ? $"{name} — используется" : name);
             if (options[index].Id.Equals(selectedId, StringComparison.OrdinalIgnoreCase)) selected = index + offset;
         }
         if (selected < 0 && options.Count > 0) selected = 0;
@@ -311,7 +411,11 @@ public sealed class SettingsWindow : IDisposable
         bool hasContainer = Guid.TryParse(selectedContainerId, out Guid selectedContainer);
         for (int index = 0; index < _audioDevices.Count; index++)
         {
-            AudioDevice device = _audioDevices[index]; SendMessageString(_audio, CB_ADDSTRING, nint.Zero, device.ToString());
+            AudioDevice device = _audioDevices[index];
+            string systemName = device.DisplayName ?? device.Name;
+            string name = DeviceAliasService.NameFor(_settings.Current, device.Id, systemName);
+            string suffix = device.IsDefault ? " — используется" : device.State == AudioDeviceState.Disabled ? " — отключено в Windows" : device.State != AudioDeviceState.Active ? " — сейчас недоступно" : string.Empty;
+            SendMessageString(_audio, CB_ADDSTRING, nint.Zero, name + suffix);
             if (device.Id.Equals(selectedId, StringComparison.OrdinalIgnoreCase)) selected = index;
             else if (selected < 0 && hasContainer && device.ContainerId == selectedContainer) selected = index;
         }
@@ -433,7 +537,9 @@ public sealed class SettingsWindow : IDisposable
             ulong command = wParam.ToUInt64(); int id = (int)(command & 0xFFFF), notification = (int)((command >> 16) & 0xFFFF);
             if (id == IdNavGeneral) SetPage(Page.General);
             else if (id == IdNavScenarios) SetPage(Page.Scenarios);
+            else if (id == IdNavDevices) SetPage(Page.Devices);
             else if (id == IdSaveGeneral) SaveGeneralSettings();
+            else if (id == IdCaptureHotKey) BeginHotKeyCapture();
             else if (id == IdStartupMode && notification == CBN_SELCHANGE) UpdateStartupScenarioEnabled();
             else if (id == IdScenarioList && notification == LBN_SELCHANGE) SelectScenario();
             else if (id == IdCreate) CreateScenario();
@@ -443,9 +549,12 @@ public sealed class SettingsWindow : IDisposable
             else if (id == IdSave) SaveEditor();
             else if (id == IdSaveApply) _ = SaveAndApplyAsync();
             else if (id == IdSaveOpenDisplay) SaveAndOpenDisplaySettings();
+            else if (id == IdDeviceList && notification == LBN_SELCHANGE) SelectDevice();
+            else if (id == IdSaveDeviceAlias) SaveDeviceAlias();
             else if (id == IdClose) DestroyWindow(window);
             return nint.Zero;
         }
+        if (message == WM_KEYDOWN && _capturingHotKey) { CaptureHotKey((uint)wParam); return nint.Zero; }
         if (message == WM_CLOSE) { DestroyWindow(window); return nint.Zero; }
         if (message == WM_NCDESTROY) { _window = nint.Zero; if (_selfHandle.IsAllocated) _selfHandle.Free(); Closed?.Invoke(this, EventArgs.Empty); }
         return DefWindowProc(window, message, wParam, lParam);
@@ -480,7 +589,11 @@ public sealed class SettingsWindow : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(nint window, StringBuilder text, int maxCount);
     [DllImport("user32.dll")] private static extern int GetWindowTextLength(nint window);
     [DllImport("user32.dll")] private static extern bool EnableWindow(nint window, bool enable);
+    [DllImport("user32.dll")] private static extern nint SetFocus(nint window);
+    [DllImport("user32.dll")] private static extern short GetKeyState(int virtualKey);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int MessageBox(nint window, string text, string caption, uint type);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern nint SetWindowLongPtr(nint window, int index, nint value);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);
+
+    private static bool IsKeyDown(int virtualKey) => (GetKeyState(virtualKey) & unchecked((short)0x8000)) != 0;
 }

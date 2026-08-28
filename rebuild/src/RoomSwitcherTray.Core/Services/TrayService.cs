@@ -57,10 +57,11 @@ public sealed class TrayService : IDisposable
             szInfo = string.Empty, szInfoTitle = string.Empty
         };
         TrayNative.Shell_NotifyIcon(TrayNative.NIM_ADD, ref _notifyData);
+        HotKeyDefinition hotKey = _settings.Current.SwitchScenarioHotKey ?? HotKeyDefinition.Default;
         _hotKeyRegistered = TrayNative.RegisterHotKey(_window, SwitchHotKeyId,
-            TrayNative.MOD_CONTROL | TrayNative.MOD_NOREPEAT, TrayNative.VK_SPACE);
+            hotKey.Modifiers | TrayNative.MOD_NOREPEAT, hotKey.VirtualKey);
         if (!_hotKeyRegistered)
-            ShowNotification("Не удалось назначить Ctrl + Пробел: комбинация уже занята.", false);
+            ShowNotification($"Не удалось назначить {FormatHotKey(hotKey)}: комбинация уже занята.", false);
     }
 
     private nint WindowProc(nint window, uint message, nuint wParam, nint lParam)
@@ -91,7 +92,7 @@ public sealed class TrayService : IDisposable
             if (_settings.IsConfigured)
             {
                 TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DEFAULT, SwitchCommand,
-                    "Следующий сценарий\tCtrl + Пробел");
+                    $"Следующий сценарий\t{FormatHotKey(_settings.Current.SwitchScenarioHotKey)}");
                 foreach ((ScenarioDefinition scenario, int index) in _settings.Current.Scenarios.Select((item, index) => (item, index)))
                     TrayNative.AppendMenu(menu, TrayNative.MF_STRING |
                         (_settings.Current.ActiveScenarioId == scenario.Id ? TrayNative.MF_CHECKED : 0),
@@ -133,7 +134,8 @@ public sealed class TrayService : IDisposable
                     ActiveDisplayStatus display = rawDisplay;
                     string resolution = display.Width > 0 && display.Height > 0
                         ? $"{display.Width} × {display.Height}" : "разрешение неизвестно";
-                    string text = $"{display.Name}\t{resolution} · {(display.HdrEnabled ? "HDR" : "SDR")}";
+                    string displayName = DeviceAliasService.NameFor(_settings.Current, display.Id, display.Name);
+                    string text = $"{displayName}\t{resolution} · {(display.HdrEnabled ? "HDR" : "SDR")}";
                     if (display.HdrSupported)
                     {
                         uint command = HdrCommandBase + (uint)_hdrCommands.Count;
@@ -155,8 +157,9 @@ public sealed class TrayService : IDisposable
                 nint submenu = TrayNative.CreatePopupMenu();
                 TrayNative.AppendMenu(submenu, TrayNative.MF_STRING |
                     (audio.IsMuted ? TrayNative.MF_CHECKED : 0), MuteCommand, "Без звука");
+                string audioName = DeviceAliasService.NameFor(_settings.Current, App.Audio.GetDefaultEndpointId() ?? string.Empty, audio.Name);
                 TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP,
-                    (nuint)submenu, $"{audio.Name}\t{level}");
+                    (nuint)submenu, $"{audioName}\t{level}");
                 added = true;
             }
         }
@@ -232,6 +235,19 @@ public sealed class TrayService : IDisposable
 
     internal Task ApplyScenarioAsync(Guid scenarioId) => ApplyAsync(scenarioId);
 
+    internal bool TryUpdateHotKey(HotKeyDefinition hotKey, out string error)
+    {
+        if (hotKey.Modifiers == 0 || hotKey.VirtualKey == 0)
+        { error = "Выберите сочетание с Ctrl, Alt, Shift или Win и обычной клавишей."; return false; }
+        if (_hotKeyRegistered) TrayNative.UnregisterHotKey(_window, SwitchHotKeyId);
+        _hotKeyRegistered = TrayNative.RegisterHotKey(_window, SwitchHotKeyId, hotKey.Modifiers | TrayNative.MOD_NOREPEAT, hotKey.VirtualKey);
+        if (_hotKeyRegistered) { error = string.Empty; return true; }
+        HotKeyDefinition previous = _settings.Current.SwitchScenarioHotKey ?? HotKeyDefinition.Default;
+        _hotKeyRegistered = TrayNative.RegisterHotKey(_window, SwitchHotKeyId, previous.Modifiers | TrayNative.MOD_NOREPEAT, previous.VirtualKey);
+        error = $"{FormatHotKey(hotKey)} уже занято другой программой.";
+        return false;
+    }
+
     public void ShowSettings()
     {
         if (_settingsWindow is not null) { _settingsWindow.Activate(); return; }
@@ -256,6 +272,30 @@ public sealed class TrayService : IDisposable
     }
 
     private string BuildTooltip() => GetActiveScenario()?.Name ?? "RoomSwitcher";
+
+    internal static string FormatHotKey(HotKeyDefinition? hotKey)
+    {
+        hotKey ??= HotKeyDefinition.Default;
+        var parts = new List<string>();
+        if ((hotKey.Modifiers & HotKeyDefinition.Control) != 0) parts.Add("Ctrl");
+        if ((hotKey.Modifiers & HotKeyDefinition.Alt) != 0) parts.Add("Alt");
+        if ((hotKey.Modifiers & HotKeyDefinition.Shift) != 0) parts.Add("Shift");
+        if ((hotKey.Modifiers & HotKeyDefinition.Win) != 0) parts.Add("Win");
+        parts.Add(FormatVirtualKey(hotKey.VirtualKey));
+        return string.Join(" + ", parts);
+    }
+
+    private static string FormatVirtualKey(uint key) => key switch
+    {
+        TrayNative.VK_SPACE => "Пробел",
+        >= 0x70 and <= 0x87 => $"F{key - 0x6F}",
+        0x1B => "Esc",
+        0x09 => "Tab",
+        0x0D => "Enter",
+        0x2E => "Delete",
+        _ when key is >= 0x30 and <= 0x5A => ((char)key).ToString().ToUpperInvariant(),
+        _ => $"Клавиша {key}"
+    };
 
     private void ShowNotification(string message, bool success)
     {
