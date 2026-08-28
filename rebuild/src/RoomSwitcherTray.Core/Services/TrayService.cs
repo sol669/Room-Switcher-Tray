@@ -47,6 +47,7 @@ public sealed class TrayService : IDisposable
         TrayNative.RegisterClassEx(ref windowClass);
         _window = TrayNative.CreateWindowEx(0, className, "RoomSwitcher", 0,
             0, 0, 0, 0, nint.Zero, nint.Zero, instance, nint.Zero);
+        TrayNative.WTSRegisterSessionNotification(_window, TrayNative.NOTIFY_FOR_THIS_SESSION);
 
         _icon = TrayIconFactory.Create();
         _notifyData = new TrayNative.NOTIFYICONDATA
@@ -75,7 +76,12 @@ public sealed class TrayService : IDisposable
             }
             if (message == TrayNative.WM_HOTKEY && (int)wParam == SwitchHotKeyId)
             {
-                _dispatcher.TryEnqueue(ApplyNext);
+                if (!IsRemoteSession) _dispatcher.TryEnqueue(ApplyNext);
+                return nint.Zero;
+            }
+            if (message == TrayNative.WM_WTSSESSION_CHANGE)
+            {
+                _dispatcher.TryEnqueue(Refresh);
                 return nint.Zero;
             }
         }
@@ -89,7 +95,14 @@ public sealed class TrayService : IDisposable
         try
         {
             _hdrCommands.Clear();
-            if (_settings.IsConfigured)
+            if (IsRemoteSession)
+            {
+                TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED, 0, "Удалённая сессия (RDP)");
+                TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
+                BuildStatusSection(menu, remoteSession: true);
+                TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
+            }
+            else if (_settings.IsConfigured)
             {
                 TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DEFAULT, SwitchCommand,
                     $"Следующий сценарий\t{FormatHotKey(_settings.Current.SwitchScenarioHotKey)}");
@@ -99,7 +112,7 @@ public sealed class TrayService : IDisposable
                         ScenarioCommandBase + (uint)index, scenario.Name);
 
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
-                BuildStatusSection(menu);
+                BuildStatusSection(menu, remoteSession: false);
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
                 TrayNative.AppendMenu(menu, TrayNative.MF_STRING, SettingsCommand, "Настройки…");
             }
@@ -121,33 +134,33 @@ public sealed class TrayService : IDisposable
         finally { TrayNative.DestroyMenu(menu); }
     }
 
-    private void BuildStatusSection(nint menu)
+    private void BuildStatusSection(nint menu, bool remoteSession)
     {
         bool added = false;
         try
         {
-            ScenarioDefinition? activeScenario = GetActiveScenario();
-            if (activeScenario is not null)
+            IReadOnlyList<ActiveDisplayStatus> displays = remoteSession
+                ? App.Displays.GetActiveDisplayStatuses()
+                : GetActiveScenario() is ScenarioDefinition activeScenario
+                    ? App.Displays.GetActiveDisplayStatuses(activeScenario.DisplayIds) : [];
+            foreach (ActiveDisplayStatus rawDisplay in displays)
             {
-                foreach (ActiveDisplayStatus rawDisplay in App.Displays.GetActiveDisplayStatuses(activeScenario.DisplayIds))
+                ActiveDisplayStatus display = rawDisplay;
+                string resolution = display.Width > 0 && display.Height > 0
+                    ? $"{display.Width} × {display.Height}" : "разрешение неизвестно";
+                string displayName = remoteSession ? display.Name : DeviceAliasService.NameFor(_settings.Current, display.Id, display.Name);
+                string text = $"{displayName}\t{resolution} · {(remoteSession ? "SDR" : display.HdrEnabled ? "HDR" : "SDR")}";
+                if (!remoteSession && display.HdrSupported)
                 {
-                    ActiveDisplayStatus display = rawDisplay;
-                    string resolution = display.Width > 0 && display.Height > 0
-                        ? $"{display.Width} × {display.Height}" : "разрешение неизвестно";
-                    string displayName = DeviceAliasService.NameFor(_settings.Current, display.Id, display.Name);
-                    string text = $"{displayName}\t{resolution} · {(display.HdrEnabled ? "HDR" : "SDR")}";
-                    if (display.HdrSupported)
-                    {
-                        uint command = HdrCommandBase + (uint)_hdrCommands.Count;
-                        _hdrCommands[command] = display;
-                        nint submenu = TrayNative.CreatePopupMenu();
-                        TrayNative.AppendMenu(submenu, TrayNative.MF_STRING, command,
-                            display.HdrEnabled ? "Выключить HDR" : "Включить HDR");
-                        TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP, (nuint)submenu, text);
-                    }
-                    else TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED, 0, text);
-                    added = true;
+                    uint command = HdrCommandBase + (uint)_hdrCommands.Count;
+                    _hdrCommands[command] = display;
+                    nint submenu = TrayNative.CreatePopupMenu();
+                    TrayNative.AppendMenu(submenu, TrayNative.MF_STRING, command,
+                        display.HdrEnabled ? "Выключить HDR" : "Включить HDR");
+                    TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP, (nuint)submenu, text);
                 }
+                else TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED, 0, text);
+                added = true;
             }
 
             AudioEndpointStatus? audio = App.Audio.GetDefaultEndpointStatus();
@@ -157,7 +170,8 @@ public sealed class TrayService : IDisposable
                 nint submenu = TrayNative.CreatePopupMenu();
                 TrayNative.AppendMenu(submenu, TrayNative.MF_STRING |
                     (audio.IsMuted ? TrayNative.MF_CHECKED : 0), MuteCommand, "Без звука");
-                string audioName = DeviceAliasService.NameFor(_settings.Current, App.Audio.GetDefaultEndpointId() ?? string.Empty, audio.Name);
+                string? audioId = App.Audio.GetDefaultEndpointId();
+                string audioName = remoteSession ? audio.Name : DeviceAliasService.NameFor(_settings.Current, audioId ?? string.Empty, audio.Name);
                 TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP,
                     (nuint)submenu, $"{audioName}\t{level}");
                 added = true;
@@ -213,6 +227,7 @@ public sealed class TrayService : IDisposable
 
     private void ApplyNext()
     {
+        if (IsRemoteSession) return;
         if (!_settings.IsConfigured) { ShowSettings(); return; }
         _ = ApplyAsync(GetNextScenario().Id);
     }
@@ -271,7 +286,9 @@ public sealed class TrayService : IDisposable
         TrayNative.Shell_NotifyIcon(TrayNative.NIM_MODIFY, ref _notifyData);
     }
 
-    private string BuildTooltip() => GetActiveScenario()?.Name ?? "RoomSwitcher";
+    private string BuildTooltip() => IsRemoteSession ? "Удалённая сессия (RDP)" : GetActiveScenario()?.Name ?? "RoomSwitcher";
+
+    private static bool IsRemoteSession => TrayNative.GetSystemMetrics(TrayNative.SM_REMOTESESSION) != 0;
 
     internal static string FormatHotKey(HotKeyDefinition? hotKey)
     {
@@ -311,6 +328,7 @@ public sealed class TrayService : IDisposable
         if (_window != nint.Zero)
         {
             if (_hotKeyRegistered) TrayNative.UnregisterHotKey(_window, SwitchHotKeyId);
+            TrayNative.WTSUnRegisterSessionNotification(_window);
             TrayNative.Shell_NotifyIcon(TrayNative.NIM_DELETE, ref _notifyData);
             TrayNative.DestroyWindow(_window);
             _window = nint.Zero;

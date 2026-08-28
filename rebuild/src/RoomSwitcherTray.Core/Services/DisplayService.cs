@@ -108,13 +108,22 @@ public sealed class DisplayService
     {
         var requested = configuredDisplayIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (requested.Count == 0) return [];
+        return GetActiveDisplayStatuses(requested, configuredDisplayIds);
+    }
+
+    public IReadOnlyList<ActiveDisplayStatus> GetActiveDisplayStatuses()
+        => GetActiveDisplayStatuses(null, null);
+
+    private IReadOnlyList<ActiveDisplayStatus> GetActiveDisplayStatuses(
+        HashSet<string>? requested, IReadOnlyCollection<string>? configuredDisplayIds)
+    {
 
         DisplayConfiguration configuration = QueryConfiguration(DisplayNative.QDC_ONLY_ACTIVE_PATHS);
         var result = new Dictionary<string, ActiveDisplayStatus>(StringComparer.OrdinalIgnoreCase);
         foreach (DisplayNative.PATH_INFO path in configuration.Paths)
         {
             (string id, string name, _) = GetIdentity(path.targetInfo.adapterId, path.targetInfo.id);
-            if (string.IsNullOrWhiteSpace(id) || !requested.Contains(id)) continue;
+            if (string.IsNullOrWhiteSpace(id) || (requested is not null && !requested.Contains(id))) continue;
 
             int width = 0, height = 0;
             if (path.sourceInfo.modeInfoIdx != DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
@@ -132,7 +141,9 @@ public sealed class DisplayService
             (bool supported, bool enabled) = GetHdrState(adapterId, targetId);
             result[id] = new ActiveDisplayStatus(id, name, width, height, supported, enabled);
         }
-        return result.Values.OrderBy(status => status.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        return configuredDisplayIds is null
+            ? result.Values.ToList()
+            : configuredDisplayIds.Where(result.ContainsKey).Select(id => result[id]).ToList();
     }
 
     public void SetHdr(string displayId, bool enabled)

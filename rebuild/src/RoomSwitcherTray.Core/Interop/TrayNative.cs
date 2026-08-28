@@ -6,6 +6,7 @@ internal static class TrayNative
 {
     internal const uint WM_APP = 0x8000;
     internal const uint WM_HOTKEY = 0x0312;
+    internal const uint WM_WTSSESSION_CHANGE = 0x02B1;
     internal const uint WM_RBUTTONUP = 0x0205;
     internal const uint TPM_RIGHTBUTTON = 0x0002;
     internal const uint TPM_RETURNCMD = 0x0100;
@@ -28,6 +29,8 @@ internal static class TrayNative
     internal const uint MOD_CONTROL = 0x0002;
     internal const uint MOD_NOREPEAT = 0x4000;
     internal const uint VK_SPACE = 0x20;
+    internal const int SM_REMOTESESSION = 0x1000;
+    internal const uint NOTIFY_FOR_THIS_SESSION = 0;
 
     internal delegate nint WindowProcedure(nint window, uint message, nuint wParam, nint lParam);
 
@@ -85,6 +88,9 @@ internal static class TrayNative
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] internal static extern bool PostMessage(nint window, uint message, nuint wParam, nint lParam);
     [DllImport("user32.dll")] internal static extern bool DestroyIcon(nint icon);
+    [DllImport("user32.dll")] internal static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll", SetLastError = true)] internal static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint virtualKey);
     [DllImport("user32.dll", SetLastError = true)] internal static extern bool UnregisterHotKey(nint window, int id);
+    [DllImport("wtsapi32.dll", SetLastError = true)] internal static extern bool WTSRegisterSessionNotification(nint window, uint flags);
+    [DllImport("wtsapi32.dll", SetLastError = true)] internal static extern bool WTSUnRegisterSessionNotification(nint window);
 }
