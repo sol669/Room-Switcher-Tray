@@ -304,7 +304,7 @@ public sealed class TrayService : IDisposable
 
     private static string FormatVirtualKey(uint key) => key switch
     {
-        TrayNative.VK_SPACE => "Пробел",
+        TrayNative.VK_SPACE => "Space",
         >= 0x70 and <= 0x87 => $"F{key - 0x6F}",
         0x1B => "Esc",
         0x09 => "Tab",
