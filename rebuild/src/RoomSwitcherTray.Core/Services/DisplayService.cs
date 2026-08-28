@@ -128,7 +128,8 @@ public sealed class DisplayService
                 }
             }
 
-            (bool supported, bool enabled) = GetHdrState(path.targetInfo.adapterId, path.targetInfo.id);
+            (DisplayNative.LUID adapterId, uint targetId) = GetColorTarget(path, configuration.Modes);
+            (bool supported, bool enabled) = GetHdrState(adapterId, targetId);
             result[id] = new ActiveDisplayStatus(id, name, width, height, supported, enabled);
         }
         return result.Values.OrderBy(status => status.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
@@ -142,22 +143,40 @@ public sealed class DisplayService
             (string id, _, _) = GetIdentity(path.targetInfo.adapterId, path.targetInfo.id);
             if (!id.Equals(displayId, StringComparison.OrdinalIgnoreCase)) continue;
 
-            (bool supported, _) = GetHdrState(path.targetInfo.adapterId, path.targetInfo.id);
+            (DisplayNative.LUID adapterId, uint targetId) = GetColorTarget(path, configuration.Modes);
+            (bool supported, _) = GetHdrState(adapterId, targetId);
             if (!supported)
                 throw new InvalidOperationException("Этот дисплей не поддерживает HDR.");
 
-            var request = new DisplayNative.SET_ADVANCED_COLOR_STATE
+            var hdrRequest = new DisplayNative.SET_HDR_STATE
             {
                 header = new DisplayNative.DEVICE_INFO_HEADER
                 {
-                    type = DisplayNative.DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE,
-                    size = (uint)Marshal.SizeOf<DisplayNative.SET_ADVANCED_COLOR_STATE>(),
-                    adapterId = path.targetInfo.adapterId,
-                    id = path.targetInfo.id
+                    type = DisplayNative.DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE,
+                    size = (uint)Marshal.SizeOf<DisplayNative.SET_HDR_STATE>(),
+                    adapterId = adapterId,
+                    id = targetId
                 },
-                enableAdvancedColor = enabled
+                value = enabled ? 1u : 0u
             };
-            int error = DisplayNative.DisplayConfigSetDeviceInfo(ref request);
+            int error = DisplayNative.DisplayConfigSetDeviceInfo(ref hdrRequest);
+            if (error != 0)
+            {
+                // Windows 10 and pre-24H2 Windows 11 do not provide the dedicated
+                // HDR request. They retain the legacy advanced-color fallback.
+                var legacyRequest = new DisplayNative.SET_ADVANCED_COLOR_STATE
+                {
+                    header = new DisplayNative.DEVICE_INFO_HEADER
+                    {
+                        type = DisplayNative.DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE,
+                        size = (uint)Marshal.SizeOf<DisplayNative.SET_ADVANCED_COLOR_STATE>(),
+                        adapterId = adapterId,
+                        id = targetId
+                    },
+                    enableAdvancedColor = enabled
+                };
+                error = DisplayNative.DisplayConfigSetDeviceInfo(ref legacyRequest);
+            }
             if (error != 0) throw new Win32Exception(error, "Windows не удалось изменить HDR.");
             return;
         }
@@ -203,6 +222,24 @@ public sealed class DisplayService
 
     private static (bool Supported, bool Enabled) GetHdrState(DisplayNative.LUID adapterId, uint targetId)
     {
+        var hdrRequest = new DisplayNative.ADVANCED_COLOR_INFO_2
+        {
+            header = new DisplayNative.DEVICE_INFO_HEADER
+            {
+                type = DisplayNative.DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2,
+                size = (uint)Marshal.SizeOf<DisplayNative.ADVANCED_COLOR_INFO_2>(),
+                adapterId = adapterId,
+                id = targetId
+            }
+        };
+        if (DisplayNative.DisplayConfigGetDeviceInfo(ref hdrRequest) == 0)
+        {
+            bool supported = (hdrRequest.value & 0x10) != 0;
+            // The mode is authoritative: advanced color can remain active as WCG
+            // while the user-facing "Use HDR" switch is off.
+            return (supported, supported && hdrRequest.activeColorMode == 2);
+        }
+
         var request = new DisplayNative.ADVANCED_COLOR_INFO
         {
             header = new DisplayNative.DEVICE_INFO_HEADER
@@ -215,6 +252,18 @@ public sealed class DisplayService
         };
         if (DisplayNative.DisplayConfigGetDeviceInfo(ref request) != 0) return (false, false);
         return ((request.value & 0x1) != 0, (request.value & 0x2) != 0);
+    }
+
+    private static (DisplayNative.LUID AdapterId, uint TargetId) GetColorTarget(
+        DisplayNative.PATH_INFO path, IReadOnlyList<DisplayNative.MODE_INFO> modes)
+    {
+        if (path.targetInfo.modeInfoIdx != DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
+            path.targetInfo.modeInfoIdx < modes.Count)
+        {
+            DisplayNative.MODE_INFO mode = modes[(int)path.targetInfo.modeInfoIdx];
+            return (mode.adapterId, mode.id);
+        }
+        return (path.targetInfo.adapterId, path.targetInfo.id);
     }
 
     private static DisplayNative.PATH_INFO[] QueryPaths() =>

@@ -9,6 +9,8 @@ internal static class DisplayNative
     internal const uint DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE = 1;
     internal const uint DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO = 9;
     internal const uint DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE = 10;
+    internal const uint DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2 = 15;
+    internal const uint DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE = 16;
     internal const uint DISPLAYCONFIG_PATH_ACTIVE = 0x00000001;
     internal const uint DISPLAYCONFIG_PATH_MODE_IDX_INVALID = 0xFFFFFFFF;
     internal const uint SDC_TOPOLOGY_SUPPLIED = 0x00000010;
@@ -140,6 +142,25 @@ internal static class DisplayNative
         [MarshalAs(UnmanagedType.Bool)] public bool enableAdvancedColor;
     }
 
+    // Windows 11 24H2+ separates actual HDR from the broader "advanced color"
+    // state. This is essential when Auto Color Management / WCG is enabled.
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ADVANCED_COLOR_INFO_2
+    {
+        public DEVICE_INFO_HEADER header;
+        public uint value;
+        public uint colorEncoding;
+        public uint bitsPerColorChannel;
+        public uint activeColorMode;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SET_HDR_STATE
+    {
+        public DEVICE_INFO_HEADER header;
+        public uint value;
+    }
+
     [DllImport("user32.dll")]
     internal static extern int GetDisplayConfigBufferSizes(uint flags, out uint pathCount, out uint modeCount);
     [DllImport("user32.dll")]
@@ -153,5 +174,9 @@ internal static class DisplayNative
     [DllImport("user32.dll")]
     internal static extern int DisplayConfigGetDeviceInfo(ref ADVANCED_COLOR_INFO request);
     [DllImport("user32.dll")]
+    internal static extern int DisplayConfigGetDeviceInfo(ref ADVANCED_COLOR_INFO_2 request);
+    [DllImport("user32.dll")]
     internal static extern int DisplayConfigSetDeviceInfo(ref SET_ADVANCED_COLOR_STATE request);
+    [DllImport("user32.dll")]
+    internal static extern int DisplayConfigSetDeviceInfo(ref SET_HDR_STATE request);
 }

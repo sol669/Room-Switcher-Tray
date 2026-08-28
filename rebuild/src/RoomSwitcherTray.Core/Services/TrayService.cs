@@ -19,8 +19,6 @@ public sealed class TrayService : IDisposable
     private readonly TrayNative.WindowProcedure _windowProcedure;
     private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher;
     private readonly Dictionary<uint, ActiveDisplayStatus> _hdrCommands = [];
-    private readonly Dictionary<string, PendingHdrState> _pendingHdrStates =
-        new(StringComparer.OrdinalIgnoreCase);
     private nint _window;
     private nint _icon;
     private TrayNative.NOTIFYICONDATA _notifyData;
@@ -132,7 +130,7 @@ public sealed class TrayService : IDisposable
             {
                 foreach (ActiveDisplayStatus rawDisplay in App.Displays.GetActiveDisplayStatuses(activeScenario.DisplayIds))
                 {
-                    ActiveDisplayStatus display = ApplyPendingHdrState(rawDisplay);
+                    ActiveDisplayStatus display = rawDisplay;
                     string resolution = display.Width > 0 && display.Height > 0
                         ? $"{display.Width} × {display.Height}" : "разрешение неизвестно";
                     string text = $"{display.Name}\t{resolution} · {(display.HdrEnabled ? "HDR" : "SDR")}";
@@ -185,8 +183,6 @@ public sealed class TrayService : IDisposable
     private async Task ToggleHdrAsync(ActiveDisplayStatus display)
     {
         bool targetState = !display.HdrEnabled;
-        _pendingHdrStates[display.Id] = new PendingHdrState(targetState,
-            DateTimeOffset.UtcNow.AddSeconds(5));
         try
         {
             await Task.Run(() => App.Displays.SetHdr(display.Id, targetState));
@@ -194,25 +190,11 @@ public sealed class TrayService : IDisposable
         }
         catch (Exception ex)
         {
-            _pendingHdrStates.Remove(display.Id);
             SettingsStore.Log(ex);
             ShowNotification($"Не удалось изменить HDR: {ex.Message}", false);
         }
     }
 
-    private ActiveDisplayStatus ApplyPendingHdrState(ActiveDisplayStatus status)
-    {
-        if (!_pendingHdrStates.TryGetValue(status.Id, out PendingHdrState pending)) return status;
-        if (status.HdrEnabled == pending.Enabled || DateTimeOffset.UtcNow >= pending.ExpiresAt)
-        {
-            _pendingHdrStates.Remove(status.Id);
-            return status;
-        }
-        // DisplayConfig updates asynchronously on some drivers. For the short time
-        // before it reports back, keep the next action aligned with the command the
-        // user has just issued instead of offering the same action again.
-        return status with { HdrEnabled = pending.Enabled };
-    }
 
     private void ToggleMute()
     {
@@ -295,6 +277,4 @@ public sealed class TrayService : IDisposable
         }
         if (_icon != nint.Zero) { TrayNative.DestroyIcon(_icon); _icon = nint.Zero; }
     }
-
-    private readonly record struct PendingHdrState(bool Enabled, DateTimeOffset ExpiresAt);
 }
