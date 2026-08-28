@@ -4,7 +4,13 @@ public sealed class ScenarioDefinition
 {
     public string Name { get; set; } = string.Empty;
     public string DisplayId { get; set; } = string.Empty;
+    public string SecondaryDisplayId { get; set; } = string.Empty;
     public string AudioDeviceId { get; set; } = string.Empty;
+
+    public IReadOnlyList<string> DisplayIds => string.IsNullOrWhiteSpace(SecondaryDisplayId) ||
+        SecondaryDisplayId.Equals(DisplayId, StringComparison.OrdinalIgnoreCase)
+        ? [DisplayId]
+        : [DisplayId, SecondaryDisplayId];
 
     public bool IsComplete =>
         !string.IsNullOrWhiteSpace(Name) &&
@@ -15,6 +21,7 @@ public sealed class ScenarioDefinition
     {
         Name = Name,
         DisplayId = DisplayId,
+        SecondaryDisplayId = SecondaryDisplayId,
         AudioDeviceId = AudioDeviceId
     };
 }

@@ -20,7 +20,7 @@ public sealed class ScenarioService(
 
         try
         {
-            await Task.Run(() => displays.ApplySingleDisplay(scenario.DisplayId));
+            await Task.Run(() => displays.ApplyDisplays(scenario.DisplayIds));
             // HDMI/DisplayPort audio endpoints often appear a few seconds after
             // Windows has activated the corresponding display path.
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));

@@ -30,42 +30,55 @@ public sealed class DisplayService
             .ToList();
     }
 
-    public void ApplySingleDisplay(string displayId)
+    public void ApplyDisplays(IReadOnlyCollection<string> displayIds)
     {
-        DisplayNative.PATH_INFO[] allPaths = QueryPaths();
-        DisplayNative.PATH_INFO? selected = null;
+        string[] requestedIds = displayIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (requestedIds.Length is < 1 or > 2)
+            throw new InvalidOperationException("Сценарий должен содержать один или два дисплея.");
 
-        foreach (DisplayNative.PATH_INFO candidate in allPaths
-                     .OrderByDescending(path => (path.flags & DisplayNative.DISPLAYCONFIG_PATH_ACTIVE) != 0)
-                     .ThenByDescending(path => path.targetInfo.targetAvailable))
+        DisplayNative.PATH_INFO[] allPaths = QueryPaths();
+        var candidates = new Dictionary<string, List<DisplayNative.PATH_INFO>>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (DisplayNative.PATH_INFO candidate in allPaths)
         {
             (string id, _) = GetIdentity(candidate.targetInfo.adapterId, candidate.targetInfo.id);
-            if (id.Equals(displayId, StringComparison.OrdinalIgnoreCase))
-            {
-                selected = candidate;
-                break;
-            }
+            if (string.IsNullOrWhiteSpace(id)) continue;
+            if (!candidates.TryGetValue(id, out List<DisplayNative.PATH_INFO>? paths))
+                candidates[id] = paths = [];
+            paths.Add(candidate);
         }
 
-        if (selected is null)
-            throw new InvalidOperationException("Выбранный дисплей сейчас недоступен.");
+        var requested = new List<DisplayNative.PATH_INFO>(requestedIds.Length);
+        foreach (string id in requestedIds)
+        {
+            if (!candidates.TryGetValue(id, out List<DisplayNative.PATH_INFO>? paths))
+                throw new InvalidOperationException("Выбранный дисплей сейчас недоступен.");
 
-        DisplayNative.PATH_INFO path = selected.Value;
-        path.flags = DisplayNative.DISPLAYCONFIG_PATH_ACTIVE;
-        path.sourceInfo.modeInfoIdx = DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
-        path.targetInfo.modeInfoIdx = DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
-        DisplayNative.PATH_INFO[] requested = [path];
+            DisplayNative.PATH_INFO path = paths
+                .OrderByDescending(item =>
+                    (item.flags & DisplayNative.DISPLAYCONFIG_PATH_ACTIVE) != 0)
+                .ThenByDescending(item => item.targetInfo.targetAvailable)
+                .First();
+            path.flags = DisplayNative.DISPLAYCONFIG_PATH_ACTIVE;
+            path.sourceInfo.modeInfoIdx = DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
+            path.targetInfo.modeInfoIdx = DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
+            requested.Add(path);
+        }
 
         uint common = DisplayNative.SDC_USE_SUPPLIED_DISPLAY_CONFIG | DisplayNative.SDC_ALLOW_CHANGES;
-        int error = DisplayNative.SetDisplayConfig(1, requested, 0, null,
+        DisplayNative.PATH_INFO[] requestedPaths = requested.ToArray();
+        int error = DisplayNative.SetDisplayConfig((uint)requestedPaths.Length, requestedPaths, 0, null,
             common | DisplayNative.SDC_VALIDATE);
         if (error != 0)
             throw new Win32Exception(error, "Windows отклонила выбранную конфигурацию дисплея.");
 
-        error = DisplayNative.SetDisplayConfig(1, requested, 0, null,
+        error = DisplayNative.SetDisplayConfig((uint)requestedPaths.Length, requestedPaths, 0, null,
             common | DisplayNative.SDC_APPLY | DisplayNative.SDC_SAVE_TO_DATABASE);
         if (error != 0)
-            throw new Win32Exception(error, "Не удалось включить выбранный дисплей.");
+            throw new Win32Exception(error, "Не удалось включить выбранные дисплеи.");
     }
 
     private static DisplayNative.PATH_INFO[] QueryPaths()

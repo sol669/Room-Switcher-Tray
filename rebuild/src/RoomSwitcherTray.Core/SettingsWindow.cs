@@ -14,9 +14,11 @@ public sealed class SettingsWindow : IDisposable
     private const int IdName1 = 101;
     private const int IdDisplay1 = 102;
     private const int IdAudio1 = 103;
+    private const int IdSecondaryDisplay1 = 104;
     private const int IdName2 = 201;
     private const int IdDisplay2 = 202;
     private const int IdAudio2 = 203;
+    private const int IdSecondaryDisplay2 = 204;
     private const int IdRefresh = 301;
     private const int IdSave = 302;
     private const int IdCancel = 303;
@@ -54,9 +56,11 @@ public sealed class SettingsWindow : IDisposable
     private nint _window;
     private nint _name1;
     private nint _display1;
+    private nint _secondaryDisplay1;
     private nint _audio1;
     private nint _name2;
     private nint _display2;
+    private nint _secondaryDisplay2;
     private nint _audio2;
     private nint _status;
     private nint _refresh;
@@ -89,7 +93,7 @@ public sealed class SettingsWindow : IDisposable
         EnsureRegistered();
         _selfHandle = GCHandle.Alloc(this);
         int width = 720;
-        int height = 640;
+        int height = 760;
         int x = Math.Max(0, (GetSystemMetrics(0) - width) / 2);
         int y = Math.Max(0, (GetSystemMetrics(1) - height) / 2);
         _window = CreateWindowEx(0, WindowClass, "Room Switcher Tray — сценарии",
@@ -136,36 +140,44 @@ public sealed class SettingsWindow : IDisposable
         AddStatic("Название", 38, 104, 130, 24, font);
         _name1 = AddControl("EDIT", string.Empty, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
             180, 100, 490, 28, IdName1, font);
-        AddStatic("Дисплей", 38, 146, 130, 24, font);
+        AddStatic("Основной дисплей", 38, 146, 130, 24, font);
         _display1 = AddControl("COMBOBOX", string.Empty,
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
             180, 142, 490, 240, IdDisplay1, font);
-        AddStatic("Аудиоустройство", 38, 188, 130, 24, font);
+        AddStatic("Второй дисплей", 38, 188, 130, 24, font);
+        _secondaryDisplay1 = AddControl("COMBOBOX", string.Empty,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+            180, 184, 490, 240, IdSecondaryDisplay1, font);
+        AddStatic("Аудиоустройство", 38, 230, 130, 24, font);
         _audio1 = AddControl("COMBOBOX", string.Empty,
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 184, 490, 240, IdAudio1, font);
+            180, 226, 490, 240, IdAudio1, font);
 
-        AddStatic("Сценарий 2", 24, 244, 180, 24, font);
-        AddStatic("Название", 38, 284, 130, 24, font);
+        AddStatic("Сценарий 2", 24, 286, 180, 24, font);
+        AddStatic("Название", 38, 326, 130, 24, font);
         _name2 = AddControl("EDIT", string.Empty, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-            180, 280, 490, 28, IdName2, font);
-        AddStatic("Дисплей", 38, 326, 130, 24, font);
+            180, 322, 490, 28, IdName2, font);
+        AddStatic("Основной дисплей", 38, 368, 130, 24, font);
         _display2 = AddControl("COMBOBOX", string.Empty,
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 322, 490, 240, IdDisplay2, font);
-        AddStatic("Аудиоустройство", 38, 368, 130, 24, font);
+            180, 364, 490, 240, IdDisplay2, font);
+        AddStatic("Второй дисплей", 38, 410, 130, 24, font);
+        _secondaryDisplay2 = AddControl("COMBOBOX", string.Empty,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+            180, 406, 490, 240, IdSecondaryDisplay2, font);
+        AddStatic("Аудиоустройство", 38, 452, 130, 24, font);
         _audio2 = AddControl("COMBOBOX", string.Empty,
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 364, 490, 240, IdAudio2, font);
+            180, 448, 490, 240, IdAudio2, font);
 
-        _status = AddStatic(string.Empty, 24, 420, 646, 44, font);
+        _status = AddStatic(string.Empty, 24, 500, 646, 44, font);
         _refresh = AddControl("BUTTON", "Обновить список устройств",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 24, 480, 240, 36, IdRefresh, font);
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 24, 558, 240, 36, IdRefresh, font);
         AddControl("BUTTON", "Отмена", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-            430, 540, 110, 38, IdCancel, font);
+            430, 640, 110, 38, IdCancel, font);
         _save = AddControl("BUTTON", "Сохранить",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-            552, 540, 118, 38, IdSave, font);
+            552, 640, 118, 38, IdSave, font);
     }
 
     private nint AddStatic(string text, int x, int y, int width, int height, nint font) =>
@@ -191,12 +203,18 @@ public sealed class SettingsWindow : IDisposable
             string name2 = GetText(_name2);
             string? display1 = SelectedDisplay(_display1)?.Id ?? _settings.Current.Scenario1?.DisplayId;
             string? display2 = SelectedDisplay(_display2)?.Id ?? _settings.Current.Scenario2?.DisplayId;
+            string? secondaryDisplay1 = SelectedOptionalDisplay(_secondaryDisplay1)?.Id ??
+                _settings.Current.Scenario1?.SecondaryDisplayId;
+            string? secondaryDisplay2 = SelectedOptionalDisplay(_secondaryDisplay2)?.Id ??
+                _settings.Current.Scenario2?.SecondaryDisplayId;
             string? audio1 = SelectedAudio(_audio1)?.Id ?? _settings.Current.Scenario1?.AudioDeviceId;
             string? audio2 = SelectedAudio(_audio2)?.Id ?? _settings.Current.Scenario2?.AudioDeviceId;
             _displays = await Task.Run(App.Displays.GetDisplays);
             _audioDevices = await App.Audio.GetRenderDevicesAsync();
             BindCombo(_display1, _displays, display1);
             BindCombo(_display2, _displays, display2);
+            BindOptionalDisplayCombo(_secondaryDisplay1, secondaryDisplay1);
+            BindOptionalDisplayCombo(_secondaryDisplay2, secondaryDisplay2);
             BindCombo(_audio1, _audioDevices, audio1);
             BindCombo(_audio2, _audioDevices, audio2);
             SetWindowText(_name1, name1.Length > 0 ? name1 : _settings.Current.Scenario1?.Name ?? string.Empty);
@@ -242,6 +260,27 @@ public sealed class SettingsWindow : IDisposable
         return index >= 0 && index < _displays.Count ? _displays[index] : null;
     }
 
+    private void BindOptionalDisplayCombo(nint combo, string? selectedId)
+    {
+        SendMessage(combo, CB_RESETCONTENT, nint.Zero, nint.Zero);
+        SendMessageString(combo, CB_ADDSTRING, nint.Zero, "Нет");
+        int selected = 0;
+        for (int index = 0; index < _displays.Count; index++)
+        {
+            DisplayDevice display = _displays[index];
+            SendMessageString(combo, CB_ADDSTRING, nint.Zero, display.ToString());
+            if (display.Id.Equals(selectedId, StringComparison.OrdinalIgnoreCase))
+                selected = index + 1;
+        }
+        SendMessage(combo, CB_SETCURSEL, (nint)selected, nint.Zero);
+    }
+
+    private DisplayDevice? SelectedOptionalDisplay(nint combo)
+    {
+        int index = (int)SendMessage(combo, CB_GETCURSEL, nint.Zero, nint.Zero) - 1;
+        return index >= 0 && index < _displays.Count ? _displays[index] : null;
+    }
+
     private AudioDevice? SelectedAudio(nint combo)
     {
         int index = (int)SendMessage(combo, CB_GETCURSEL, nint.Zero, nint.Zero);
@@ -254,17 +293,27 @@ public sealed class SettingsWindow : IDisposable
         {
             Name = GetText(_name1).Trim(),
             DisplayId = SelectedDisplay(_display1)?.Id ?? string.Empty,
+            SecondaryDisplayId = SelectedOptionalDisplay(_secondaryDisplay1)?.Id ?? string.Empty,
             AudioDeviceId = SelectedAudio(_audio1)?.Id ?? string.Empty
         };
         var second = new ScenarioDefinition
         {
             Name = GetText(_name2).Trim(),
             DisplayId = SelectedDisplay(_display2)?.Id ?? string.Empty,
+            SecondaryDisplayId = SelectedOptionalDisplay(_secondaryDisplay2)?.Id ?? string.Empty,
             AudioDeviceId = SelectedAudio(_audio2)?.Id ?? string.Empty
         };
         if (!first.IsComplete || !second.IsComplete)
         {
             SetWindowText(_status, "Для обоих сценариев укажите название, дисплей и аудиоустройство.");
+            return;
+        }
+        if ((!string.IsNullOrWhiteSpace(first.SecondaryDisplayId) &&
+             first.SecondaryDisplayId.Equals(first.DisplayId, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(second.SecondaryDisplayId) &&
+             second.SecondaryDisplayId.Equals(second.DisplayId, StringComparison.OrdinalIgnoreCase)))
+        {
+            SetWindowText(_status, "Основной и второй дисплей в сценарии должны отличаться.");
             return;
         }
         try
