@@ -9,6 +9,8 @@ public sealed class ScenarioDefinition
     public List<string> DisplayIds { get; set; } = [];
     public string AudioDeviceId { get; set; } = string.Empty;
     public string AudioDeviceContainerId { get; set; } = string.Empty;
+    // Null means "do not change". Zero means mute; positive values are percentages.
+    public int? VolumePercent { get; set; }
 
     [JsonIgnore]
     public bool IsComplete =>
@@ -24,14 +26,25 @@ public sealed class ScenarioDefinition
         Name = Name,
         DisplayIds = [.. DisplayIds],
         AudioDeviceId = AudioDeviceId,
-        AudioDeviceContainerId = AudioDeviceContainerId
+        AudioDeviceContainerId = AudioDeviceContainerId,
+        VolumePercent = VolumePercent
     };
+}
+
+public enum StartupScenarioMode
+{
+    KeepCurrentConfiguration,
+    RestoreLastScenario,
+    AlwaysUseScenario
 }
 
 public sealed class AppSettings
 {
     public List<ScenarioDefinition> Scenarios { get; set; } = [];
     public Guid? ActiveScenarioId { get; set; }
+    public bool StartWithWindows { get; set; }
+    public StartupScenarioMode StartupScenarioMode { get; set; }
+    public Guid? StartupScenarioId { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LegacyScenarioDefinition? Scenario1 { get; set; }

@@ -88,6 +88,29 @@ public sealed class AudioService
         finally { Release(volume); }
     }
 
+    public void SetDefaultEndpointVolume(int percent)
+    {
+        percent = Math.Clamp(percent, 0, 100);
+        string? deviceId = GetRenderDevices().FirstOrDefault(item => item.IsDefault && item.IsActive)?.Id;
+        if (string.IsNullOrWhiteSpace(deviceId))
+            throw new InvalidOperationException("Активное аудиоустройство не найдено.");
+
+        IAudioEndpointVolume? volume = null;
+        try
+        {
+            volume = ActivateEndpointVolume(deviceId);
+            Guid context = Guid.Empty;
+            if (percent == 0)
+            {
+                ThrowIfFailed(volume.SetMute(true, ref context));
+                return;
+            }
+            ThrowIfFailed(volume.SetMasterVolumeLevelScalar(percent / 100f, ref context));
+            ThrowIfFailed(volume.SetMute(false, ref context));
+        }
+        finally { Release(volume); }
+    }
+
     public Task<IReadOnlyList<AudioDevice>> GetVisibleRenderDevicesAsync(
         IReadOnlyCollection<DisplayDevice> displays,
         params ScenarioDefinition?[] scenarios)

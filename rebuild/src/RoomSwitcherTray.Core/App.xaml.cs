@@ -37,9 +37,22 @@ public partial class App : Application
         CreateLifetimeWindow();
         Tray = new TrayService(Settings, Scenarios);
         Tray.Initialize();
+        ApplyStartupScenario();
 
         // Настройки намеренно не открываются автоматически. Трей должен
         // продолжать работать, даже если окно настройки не удалось создать.
+    }
+
+    private static void ApplyStartupScenario()
+    {
+        Guid? scenarioId = Settings.Current.StartupScenarioMode switch
+        {
+            StartupScenarioMode.RestoreLastScenario => Settings.Current.ActiveScenarioId,
+            StartupScenarioMode.AlwaysUseScenario => Settings.Current.StartupScenarioId,
+            _ => null
+        };
+        if (scenarioId is Guid id && Settings.Current.Scenarios.Any(scenario => scenario.Id == id))
+            _ = Tray?.ApplyScenarioAsync(id);
     }
 
     private void CreateLifetimeWindow()

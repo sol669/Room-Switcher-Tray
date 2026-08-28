@@ -28,6 +28,8 @@ public sealed class ScenarioService(
             scenario.AudioDeviceId = selectedAudio.Id;
             if (selectedAudio.ContainerId.HasValue)
                 scenario.AudioDeviceContainerId = selectedAudio.ContainerId.Value.ToString("D");
+            if (scenario.VolumePercent.HasValue)
+                audio.SetDefaultEndpointVolume(scenario.VolumePercent.Value);
             settings.Current.ActiveScenarioId = scenario.Id;
             settings.Save();
             return new ApplyResult(true, $"Сценарий «{scenario.Name}» применён.");
