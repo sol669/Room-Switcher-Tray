@@ -121,7 +121,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "Monitors") => "Monitors",
         (true, "AudioDevices") => "Audio devices", (true, "DeviceAlias") => "Name in RoomSwitcher",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "FooterVersion") => "RoomSwitcher 0.8.2",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "FooterVersion") => "RoomSwitcher 0.8.3",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -132,7 +132,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "Monitors") => "Мониторы",
         (false, "AudioDevices") => "Аудиоустройства", (false, "DeviceAlias") => "Имя в RoomSwitcher",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "FooterVersion") => "RoomSwitcher 0.8.2",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "FooterVersion") => "RoomSwitcher 0.8.3",
         _ => key
     };
 
@@ -194,15 +194,19 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private void NavigateTo(string page)
     {
         if (page == _currentPage) return;
-        ShowPage(page);
+        _currentPage = page;
         RefreshNavigationSelection();
+        _pageHost.Content = page switch { "scenarios" => BuildScenariosPage(), _ => BuildGeneralPage() };
+        // Button pointer/focus visual states settle after Click. Re-apply the
+        // selected page once more afterwards so a stale accent fill cannot win.
+        _root.DispatcherQueue.TryEnqueue(RefreshNavigationSelection);
     }
     private void RefreshNavigationSelection()
     {
         foreach ((string page, Button button) in _navButtons)
         {
             bool selected = page == _currentPage;
-            button.Background = selected ? AccentBrush() : ThemeBrush("SubtleFillColorTransparentBrush", Colors.Transparent);
+            button.Background = selected ? AccentBrush() : new SolidColorBrush(Colors.Transparent);
             button.Foreground = selected ? AccentTextBrush() : ThemeBrush("TextFillColorPrimaryBrush", IsDark() ? Colors.White : Colors.Black);
         }
     }
@@ -417,6 +421,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         if (_saveButton is not null) _saveButton.IsEnabled = false;
         try
         {
+            bool appearanceChanged = _pendingTheme != _settings.Current.Theme ||
+                _pendingLanguage != _settings.Current.Language;
             StartupService.SetEnabled(_pendingStartWithWindows);
             _settings.Current.StartWithWindows = _pendingStartWithWindows;
             _settings.Current.StartupScenarioMode = _pendingStartupMode;
@@ -428,7 +434,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             _settings.Save();
             ResetPendingGeneral();
             _tray.Refresh();
-            if (rebuildShell)
+            if (rebuildShell && appearanceChanged)
             {
                 string page = _currentPage;
                 BuildShell(page);
@@ -436,6 +442,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             else
             {
                 ApplyTheme();
+                RefreshNavigationSelection();
                 UpdateSaveButton();
             }
             _root.DispatcherQueue.TryEnqueue(() =>
