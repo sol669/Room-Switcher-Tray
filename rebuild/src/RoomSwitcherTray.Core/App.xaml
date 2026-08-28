@@ -13,7 +13,7 @@
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="CornerRadius" Value="8" />
-                <Setter Property="MinHeight" Value="46" />
+                <Setter Property="Height" Value="46" />
                 <Setter Property="Padding" Value="14,5" />
             </Style>
 
