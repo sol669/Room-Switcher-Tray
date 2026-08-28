@@ -106,7 +106,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "SystemName") => "System name",
         (true, "FriendlyName") => "Name in RoomSwitcher", (true, "SaveName") => "Save name",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.10 · sol669 ·",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.11 · sol669 ·",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -117,7 +117,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "SystemName") => "Системное имя",
         (false, "FriendlyName") => "Имя в RoomSwitcher", (false, "SaveName") => "Сохранить имя",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.10 · sol669 ·",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.11 · sol669 ·",
         _ => key
     };
 
@@ -127,7 +127,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _navButtons.Clear();
         _root.RowDefinitions.Clear(); _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var main = new Grid(); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) }); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var menu = new StackPanel { Spacing = 5, Margin = new Thickness(20, 20, 16, 12) };
+        var menu = new StackPanel { Spacing = 5, Margin = new Thickness(20, 10, 16, 12) };
         menu.Children.Add(new TextBlock { Text = T("Settings"), FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 0, 36) });
         menu.Children.Add(NavButton(T("General"), "general"));
         menu.Children.Add(NavButton(T("Scenarios"), "scenarios"));
@@ -208,7 +208,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             ? Math.Max(0, startupChoices.FindIndex(choice => choice.Id == _settings.Current.StartupScenarioId)) : 0;
         panel.Children.Add(SettingRow(T("StartupScenario"), _startupChoiceBox));
         var hotkeyLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, HorizontalAlignment = HorizontalAlignment.Right };
-        _hotKeyCaptureButton = new Button { Content = T("Change"), MinWidth = 110 }; _hotKeyCaptureButton.Click += (_, _) => BeginCapture(_hotKeyCaptureButton); hotkeyLine.Children.Add(_hotKeyCaptureButton);
+        _hotKeyCaptureButton = SettingsButton(new Button { Content = T("Change"), MinWidth = 110 }); _hotKeyCaptureButton.Click += (_, _) => BeginCapture(_hotKeyCaptureButton); hotkeyLine.Children.Add(_hotKeyCaptureButton);
         _hotKeyTitle = new TextBlock { Text = $"{T("Hotkey")} — {TrayService.FormatHotKey(_settings.Current.SwitchScenarioHotKey)}", VerticalAlignment = VerticalAlignment.Center };
         panel.Children.Add(SettingRow(_hotKeyTitle, hotkeyLine));
         _hotKeyHint = new TextBlock { Opacity = .68, Margin = new Thickness(16, 0, 0, 0) }; panel.Children.Add(_hotKeyHint);
@@ -239,6 +239,16 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         comboBox.BorderThickness = new Thickness(0);
         comboBox.Background = ThemeBrush("ControlFillColorDefaultBrush", IsDark() ? Color.FromArgb(255, 50, 50, 53) : Color.FromArgb(255, 249, 249, 249));
         return comboBox;
+    }
+
+    private Button SettingsButton(Button button)
+    {
+        button.Height = 34;
+        button.VerticalAlignment = VerticalAlignment.Center;
+        button.CornerRadius = new CornerRadius(4);
+        button.BorderThickness = new Thickness(0);
+        button.Background = ThemeBrush("ControlFillColorDefaultBrush", IsDark() ? Color.FromArgb(255, 50, 50, 53) : Color.FromArgb(255, 249, 249, 249));
+        return button;
     }
     private Border SettingRow(string title, FrameworkElement control)
         => SettingRow(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center }, control);
