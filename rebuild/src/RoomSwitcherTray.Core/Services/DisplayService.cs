@@ -38,8 +38,8 @@ public sealed class DisplayService
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        if (requestedIds.Length is < 1 or > 2)
-            throw new InvalidOperationException("Сценарий должен содержать один или два дисплея.");
+        if (requestedIds.Length is < 1 or > 4)
+            throw new InvalidOperationException("Сценарий должен содержать от одного до четырёх дисплеев.");
 
         DisplayNative.PATH_INFO[] allPaths = QueryPaths();
         var candidates = new Dictionary<string, List<DisplayNative.PATH_INFO>>(
@@ -86,7 +86,7 @@ public sealed class DisplayService
         }
 
         // There is no saved topology yet. Ask Windows to create one, but only from paths
-        // with distinct sources so a two-display scenario is extended, never cloned.
+        // with distinct sources so a multi-display scenario is extended, never cloned.
         DisplayNative.PATH_INFO[] requestedPaths = BuildExtendedTopologies(requestedCandidates)
             .FirstOrDefault()
             ?? throw new InvalidOperationException(
@@ -114,30 +114,31 @@ public sealed class DisplayService
     private static IEnumerable<DisplayNative.PATH_INFO[]> BuildExtendedTopologies(
         IReadOnlyList<DisplayNative.PATH_INFO[]> candidates)
     {
-        if (candidates.Count == 1)
-        {
-            foreach (DisplayNative.PATH_INFO path in candidates[0])
-                yield return [path];
-            yield break;
-        }
+        var selected = new DisplayNative.PATH_INFO[candidates.Count];
+        var usedSources = new HashSet<(uint Low, int High, uint Id)>();
 
-        foreach (DisplayNative.PATH_INFO first in candidates[0])
+        return Build(0);
+
+        IEnumerable<DisplayNative.PATH_INFO[]> Build(int index)
         {
-            foreach (DisplayNative.PATH_INFO second in candidates[1])
+            if (index == candidates.Count)
             {
-                if (HaveSameSource(first, second))
-                    continue;
-                yield return [first, second];
+                yield return [.. selected];
+                yield break;
+            }
+
+            foreach (DisplayNative.PATH_INFO path in candidates[index])
+            {
+                var source = (path.sourceInfo.adapterId.LowPart,
+                    path.sourceInfo.adapterId.HighPart, path.sourceInfo.id);
+                if (!usedSources.Add(source)) continue;
+                selected[index] = path;
+                foreach (DisplayNative.PATH_INFO[] topology in Build(index + 1))
+                    yield return topology;
+                usedSources.Remove(source);
             }
         }
     }
-
-    private static bool HaveSameSource(
-        DisplayNative.PATH_INFO first,
-        DisplayNative.PATH_INFO second) =>
-        first.sourceInfo.adapterId.LowPart == second.sourceInfo.adapterId.LowPart &&
-        first.sourceInfo.adapterId.HighPart == second.sourceInfo.adapterId.HighPart &&
-        first.sourceInfo.id == second.sourceInfo.id;
 
     private static DisplayNative.PATH_INFO[] QueryPaths()
     {

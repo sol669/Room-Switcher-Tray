@@ -4,48 +4,27 @@ using System.Text;
 
 namespace RoomSwitcherTray.Core;
 
-/// <summary>
-/// Нативное Win32-окно базовой настройки. Оно не зависит от XAML и поэтому
-/// не может обрушить трей из-за ошибки загрузки визуальных ресурсов WinUI.
-/// </summary>
 public sealed class SettingsWindow : IDisposable
 {
     private const string WindowClass = "sol669.RoomSwitcherTray.Core.Settings";
-    private const int IdName1 = 101;
-    private const int IdDisplay1 = 102;
-    private const int IdAudio1 = 103;
-    private const int IdSecondaryDisplay1 = 104;
-    private const int IdName2 = 201;
-    private const int IdDisplay2 = 202;
-    private const int IdAudio2 = 203;
-    private const int IdSecondaryDisplay2 = 204;
-    private const int IdRefresh = 301;
-    private const int IdSave = 302;
-    private const int IdCancel = 303;
-    private const uint WM_COMMAND = 0x0111;
-    private const uint WM_CLOSE = 0x0010;
-    private const uint WM_NCCREATE = 0x0081;
-    private const uint WM_NCDESTROY = 0x0082;
-    private const uint WM_SETFONT = 0x0030;
-    private const uint CB_ADDSTRING = 0x0143;
-    private const uint CB_GETCURSEL = 0x0147;
-    private const uint CB_RESETCONTENT = 0x014B;
-    private const uint CB_SETCURSEL = 0x014E;
-    private const int WS_OVERLAPPED = 0x00000000;
-    private const int WS_CAPTION = 0x00C00000;
-    private const int WS_SYSMENU = 0x00080000;
-    private const int WS_MINIMIZEBOX = 0x00020000;
-    private const int WS_VISIBLE = 0x10000000;
-    private const int WS_CHILD = 0x40000000;
-    private const int WS_TABSTOP = 0x00010000;
-    private const int WS_VSCROLL = 0x00200000;
-    private const int ES_AUTOHSCROLL = 0x0080;
-    private const int CBS_DROPDOWNLIST = 0x0003;
-    private const int BS_DEFPUSHBUTTON = 0x0001;
-    private const int SW_SHOWNORMAL = 1;
-    private const int COLOR_WINDOW = 5;
-    private const int IDC_ARROW = 32512;
-    private const int DEFAULT_GUI_FONT = 17;
+    private const int IdScenarioList = 101, IdCreate = 102, IdDelete = 103;
+    private const int IdName = 201, IdMonitor1 = 211, IdAudio = 220;
+    private const int IdRefresh = 301, IdSave = 302, IdSaveApply = 303, IdCancel = 304;
+    private const uint WM_COMMAND = 0x0111, WM_CLOSE = 0x0010, WM_NCCREATE = 0x0081,
+        WM_NCDESTROY = 0x0082, WM_SETFONT = 0x0030;
+    private const uint CB_ADDSTRING = 0x0143, CB_GETCURSEL = 0x0147,
+        CB_RESETCONTENT = 0x014B, CB_SETCURSEL = 0x014E;
+    private const uint LB_ADDSTRING = 0x0180, LB_GETCURSEL = 0x0188,
+        LB_RESETCONTENT = 0x0184, LB_SETCURSEL = 0x0186;
+    private const int LBN_SELCHANGE = 1;
+    private const int WS_OVERLAPPED = 0, WS_CAPTION = 0x00C00000,
+        WS_SYSMENU = 0x00080000, WS_MINIMIZEBOX = 0x00020000,
+        WS_VISIBLE = 0x10000000, WS_CHILD = 0x40000000, WS_TABSTOP = 0x00010000,
+        WS_VSCROLL = 0x00200000, WS_BORDER = 0x00800000, ES_AUTOHSCROLL = 0x0080,
+        CBS_DROPDOWNLIST = 0x0003, LBS_NOTIFY = 0x0001, BS_DEFPUSHBUTTON = 0x0001;
+    private const int SW_SHOWNORMAL = 1, COLOR_WINDOW = 5, IDC_ARROW = 32512,
+        DEFAULT_GUI_FONT = 17, IdYes = 6;
+    private const uint MB_YESNO = 0x00000004, MB_ICONWARNING = 0x00000030;
 
     private static readonly WindowProcedure StaticWindowProcedure = WindowProc;
     private static readonly object RegistrationLock = new();
@@ -53,21 +32,16 @@ public sealed class SettingsWindow : IDisposable
 
     private readonly SettingsStore _settings;
     private readonly TrayService _tray;
-    private nint _window;
-    private nint _name1;
-    private nint _display1;
-    private nint _secondaryDisplay1;
-    private nint _audio1;
-    private nint _name2;
-    private nint _display2;
-    private nint _secondaryDisplay2;
-    private nint _audio2;
-    private nint _status;
-    private nint _refresh;
-    private nint _save;
+    private readonly List<ScenarioDefinition> _workingScenarios;
+    private readonly nint[] _monitorCombos = new nint[4];
+    private nint _window, _scenarioList, _name, _audio, _status, _refresh,
+        _save, _saveApply, _delete;
     private GCHandle _selfHandle;
     private IReadOnlyList<DisplayDevice> _displays = [];
     private IReadOnlyList<AudioDevice> _audioDevices = [];
+    private int _selectedIndex = -1;
+    private bool _loading;
+    private bool _devicesLoaded;
 
     public event EventHandler? Closed;
 
@@ -75,25 +49,20 @@ public sealed class SettingsWindow : IDisposable
     {
         _settings = settings;
         _tray = tray;
+        _workingScenarios = settings.Current.Scenarios.Select(s => s.Clone()).ToList();
     }
 
     public void Activate()
     {
-        if (_window == nint.Zero)
-            CreateWindow();
-        else
-        {
-            ShowWindow(_window, SW_SHOWNORMAL);
-            SetForegroundWindow(_window);
-        }
+        if (_window == nint.Zero) CreateWindow();
+        else { ShowWindow(_window, SW_SHOWNORMAL); SetForegroundWindow(_window); }
     }
 
     private void CreateWindow()
     {
         EnsureRegistered();
         _selfHandle = GCHandle.Alloc(this);
-        int width = 720;
-        int height = 760;
+        const int width = 920, height = 660;
         int x = Math.Max(0, (GetSystemMetrics(0) - width) / 2);
         int y = Math.Max(0, (GetSystemMetrics(1) - height) / 2);
         _window = CreateWindowEx(0, WindowClass, "Room Switcher Tray — сценарии",
@@ -105,8 +74,10 @@ public sealed class SettingsWindow : IDisposable
             _selfHandle.Free();
             throw new InvalidOperationException($"Не удалось создать окно настроек: {Marshal.GetLastWin32Error()}");
         }
-
         CreateControls();
+        _selectedIndex = _workingScenarios.Count > 0 ? 0 : -1;
+        ReloadScenarioList();
+        ShowSelectedScenario();
         _ = ReloadDevicesAsync();
         SetForegroundWindow(_window);
     }
@@ -116,16 +87,13 @@ public sealed class SettingsWindow : IDisposable
         lock (RegistrationLock)
         {
             if (_registered) return;
-            var windowClass = new WNDCLASSEX
+            var wc = new WNDCLASSEX
             {
-                cbSize = (uint)Marshal.SizeOf<WNDCLASSEX>(),
-                lpfnWndProc = StaticWindowProcedure,
-                hInstance = GetModuleHandle(null),
-                hCursor = LoadCursor(nint.Zero, (nint)IDC_ARROW),
-                hbrBackground = (nint)(COLOR_WINDOW + 1),
-                lpszClassName = WindowClass
+                cbSize = (uint)Marshal.SizeOf<WNDCLASSEX>(), lpfnWndProc = StaticWindowProcedure,
+                hInstance = GetModuleHandle(null), hCursor = LoadCursor(nint.Zero, (nint)IDC_ARROW),
+                hbrBackground = (nint)(COLOR_WINDOW + 1), lpszClassName = WindowClass
             };
-            ushort atom = RegisterClassEx(ref windowClass);
+            ushort atom = RegisterClassEx(ref wc);
             if (atom == 0 && Marshal.GetLastWin32Error() != 1410)
                 throw new InvalidOperationException($"Не удалось зарегистрировать окно: {Marshal.GetLastWin32Error()}");
             _registered = true;
@@ -135,49 +103,41 @@ public sealed class SettingsWindow : IDisposable
     private void CreateControls()
     {
         nint font = GetStockObject(DEFAULT_GUI_FONT);
-        AddStatic("Настройте два сценария переключения", 24, 20, 650, 28, font);
-        AddStatic("Сценарий 1", 24, 64, 180, 24, font);
-        AddStatic("Название", 38, 104, 130, 24, font);
-        _name1 = AddControl("EDIT", string.Empty, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-            180, 100, 490, 28, IdName1, font);
-        AddStatic("Основной дисплей", 38, 146, 130, 24, font);
-        _display1 = AddControl("COMBOBOX", string.Empty,
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 142, 490, 240, IdDisplay1, font);
-        AddStatic("Второй дисплей", 38, 188, 130, 24, font);
-        _secondaryDisplay1 = AddControl("COMBOBOX", string.Empty,
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 184, 490, 240, IdSecondaryDisplay1, font);
-        AddStatic("Аудиоустройство", 38, 230, 130, 24, font);
-        _audio1 = AddControl("COMBOBOX", string.Empty,
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 226, 490, 240, IdAudio1, font);
+        AddStatic("Сценарии", 24, 20, 220, 26, font);
+        AddControl("BUTTON", "+ Создать сценарий", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            24, 52, 220, 34, IdCreate, font);
+        _scenarioList = AddControl("LISTBOX", string.Empty,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | WS_BORDER | LBS_NOTIFY,
+            24, 96, 220, 420, IdScenarioList, font);
+        _delete = AddControl("BUTTON", "Удалить сценарий", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            24, 526, 220, 34, IdDelete, font);
 
-        AddStatic("Сценарий 2", 24, 286, 180, 24, font);
-        AddStatic("Название", 38, 326, 130, 24, font);
-        _name2 = AddControl("EDIT", string.Empty, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-            180, 322, 490, 28, IdName2, font);
-        AddStatic("Основной дисплей", 38, 368, 130, 24, font);
-        _display2 = AddControl("COMBOBOX", string.Empty,
+        AddStatic("Редактор сценария", 278, 20, 592, 26, font);
+        AddStatic("Название", 278, 62, 130, 24, font);
+        _name = AddControl("EDIT", string.Empty, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+            420, 58, 450, 28, IdName, font);
+        for (int index = 0; index < 4; index++)
+        {
+            int y = 104 + index * 42;
+            AddStatic($"Монитор {index + 1}", 278, y + 4, 130, 24, font);
+            _monitorCombos[index] = AddControl("COMBOBOX", string.Empty,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+                420, y, 450, 240, IdMonitor1 + index, font);
+        }
+        AddStatic("Аудиоустройство", 278, 278, 130, 24, font);
+        _audio = AddControl("COMBOBOX", string.Empty,
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 364, 490, 240, IdDisplay2, font);
-        AddStatic("Второй дисплей", 38, 410, 130, 24, font);
-        _secondaryDisplay2 = AddControl("COMBOBOX", string.Empty,
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 406, 490, 240, IdSecondaryDisplay2, font);
-        AddStatic("Аудиоустройство", 38, 452, 130, 24, font);
-        _audio2 = AddControl("COMBOBOX", string.Empty,
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-            180, 448, 490, 240, IdAudio2, font);
-
-        _status = AddStatic(string.Empty, 24, 500, 646, 44, font);
+            420, 274, 450, 240, IdAudio, font);
+        _status = AddStatic(string.Empty, 278, 326, 592, 64, font);
         _refresh = AddControl("BUTTON", "Обновить список устройств",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 24, 558, 240, 36, IdRefresh, font);
-        AddControl("BUTTON", "Отмена", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-            430, 640, 110, 38, IdCancel, font);
-        _save = AddControl("BUTTON", "Сохранить",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 278, 404, 240, 34, IdRefresh, font);
+        AddControl("BUTTON", "Закрыть", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            510, 526, 100, 38, IdCancel, font);
+        _save = AddControl("BUTTON", "Сохранить", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            620, 526, 100, 38, IdSave, font);
+        _saveApply = AddControl("BUTTON", "Сохранить и применить",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-            552, 640, 118, 38, IdSave, font);
+            730, 526, 140, 38, IdSaveApply, font);
     }
 
     private nint AddStatic(string text, int x, int y, int width, int height, nint font) =>
@@ -188,182 +148,220 @@ public sealed class SettingsWindow : IDisposable
     {
         nint control = CreateWindowEx(0, className, text, style, x, y, width, height,
             _window, (nint)id, GetModuleHandle(null), nint.Zero);
-        if (control != nint.Zero)
-            SendMessage(control, WM_SETFONT, font, (nint)1);
+        if (control != nint.Zero) SendMessage(control, WM_SETFONT, font, (nint)1);
         return control;
+    }
+
+    private void ReloadScenarioList()
+    {
+        _loading = true;
+        SendMessage(_scenarioList, LB_RESETCONTENT, nint.Zero, nint.Zero);
+        foreach (ScenarioDefinition scenario in _workingScenarios)
+            SendMessageString(_scenarioList, LB_ADDSTRING, nint.Zero,
+                string.IsNullOrWhiteSpace(scenario.Name) ? "Новый сценарий" : scenario.Name);
+        SendMessage(_scenarioList, LB_SETCURSEL, (nint)_selectedIndex, nint.Zero);
+        _loading = false;
+    }
+
+    private void ShowSelectedScenario()
+    {
+        bool exists = _selectedIndex >= 0 && _selectedIndex < _workingScenarios.Count;
+        SetEditorEnabled(exists);
+        if (!exists)
+        {
+            SetWindowText(_name, string.Empty);
+            foreach (nint combo in _monitorCombos) SendMessage(combo, CB_RESETCONTENT, nint.Zero, nint.Zero);
+            SendMessage(_audio, CB_RESETCONTENT, nint.Zero, nint.Zero);
+            SetWindowText(_status, "Создайте первый сценарий.");
+            return;
+        }
+        ScenarioDefinition scenario = _workingScenarios[_selectedIndex];
+        SetWindowText(_name, scenario.Name);
+        for (int index = 0; index < 4; index++)
+            BindDisplayCombo(_monitorCombos[index],
+                index < scenario.DisplayIds.Count ? scenario.DisplayIds[index] : null, index > 0);
+        BindAudioCombo(scenario.AudioDeviceId, scenario.AudioDeviceContainerId);
+    }
+
+    private void CaptureEditorDraft()
+    {
+        if (_selectedIndex < 0 || _selectedIndex >= _workingScenarios.Count) return;
+        ScenarioDefinition scenario = _workingScenarios[_selectedIndex];
+        scenario.Name = GetText(_name).Trim();
+        if (!_devicesLoaded) return;
+        scenario.DisplayIds = _monitorCombos.Select((combo, index) => SelectedDisplay(combo, index > 0)?.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id)).Cast<string>().ToList();
+        AudioDevice? audio = SelectedAudio();
+        if (audio is not null)
+        {
+            scenario.AudioDeviceId = audio.Id;
+            scenario.AudioDeviceContainerId = audio.ContainerId?.ToString("D") ?? string.Empty;
+        }
     }
 
     private async Task ReloadDevicesAsync()
     {
+        CaptureEditorDraft();
         SetBusy(true);
         SetWindowText(_status, "Поиск устройств…");
         try
         {
-            string name1 = GetText(_name1);
-            string name2 = GetText(_name2);
-            string? display1 = SelectedDisplay(_display1)?.Id ?? _settings.Current.Scenario1?.DisplayId;
-            string? display2 = SelectedDisplay(_display2)?.Id ?? _settings.Current.Scenario2?.DisplayId;
-            string? secondaryDisplay1 = SelectedOptionalDisplay(_secondaryDisplay1)?.Id ??
-                _settings.Current.Scenario1?.SecondaryDisplayId;
-            string? secondaryDisplay2 = SelectedOptionalDisplay(_secondaryDisplay2)?.Id ??
-                _settings.Current.Scenario2?.SecondaryDisplayId;
-            string? audio1 = SelectedAudio(_audio1)?.Id ?? _settings.Current.Scenario1?.AudioDeviceId;
-            string? audio2 = SelectedAudio(_audio2)?.Id ?? _settings.Current.Scenario2?.AudioDeviceId;
-            string? audioContainer1 = SelectedAudio(_audio1)?.ContainerId?.ToString("D") ??
-                _settings.Current.Scenario1?.AudioDeviceContainerId;
-            string? audioContainer2 = SelectedAudio(_audio2)?.ContainerId?.ToString("D") ??
-                _settings.Current.Scenario2?.AudioDeviceContainerId;
             _displays = await Task.Run(App.Displays.GetDisplays);
-            _audioDevices = await App.Audio.GetVisibleRenderDevicesAsync(_displays,
-                _settings.Current.Scenario1, _settings.Current.Scenario2);
-            BindCombo(_display1, _displays, display1);
-            BindCombo(_display2, _displays, display2);
-            BindOptionalDisplayCombo(_secondaryDisplay1, secondaryDisplay1);
-            BindOptionalDisplayCombo(_secondaryDisplay2, secondaryDisplay2);
-            BindAudioCombo(_audio1, audio1, audioContainer1);
-            BindAudioCombo(_audio2, audio2, audioContainer2);
-            SetWindowText(_name1, name1.Length > 0 ? name1 : _settings.Current.Scenario1?.Name ?? string.Empty);
-            SetWindowText(_name2, name2.Length > 0 ? name2 : _settings.Current.Scenario2?.Name ?? string.Empty);
+            _audioDevices = await App.Audio.GetVisibleRenderDevicesAsync(
+                _displays, _workingScenarios.Cast<ScenarioDefinition?>().ToArray());
+            _devicesLoaded = true;
+            ShowSelectedScenario();
             SetWindowText(_status, _displays.Count == 0 || _audioDevices.Count == 0
-                ? "Не удалось найти все необходимые устройства."
-                : string.Empty);
+                ? "Не удалось найти все необходимые устройства." : string.Empty);
         }
         catch (Exception ex)
         {
             SettingsStore.Log(ex);
             SetWindowText(_status, $"Не удалось получить устройства: {ex.Message}");
         }
-        finally
-        {
-            SetBusy(false);
-        }
+        finally { SetBusy(false); }
     }
 
-    private static void BindCombo<T>(nint combo, IReadOnlyList<T> items, string? selectedId)
+    private void BindDisplayCombo(nint combo, string? selectedId, bool optional)
     {
         SendMessage(combo, CB_RESETCONTENT, nint.Zero, nint.Zero);
-        int selected = -1;
-        for (int index = 0; index < items.Count; index++)
+        int offset = optional ? 1 : 0, selected = optional ? 0 : -1;
+        if (optional) SendMessageString(combo, CB_ADDSTRING, nint.Zero, "Нет");
+        for (int index = 0; index < _displays.Count; index++)
         {
-            T item = items[index];
-            SendMessageString(combo, CB_ADDSTRING, nint.Zero, item?.ToString() ?? string.Empty);
-            string id = item switch
-            {
-                DisplayDevice display => display.Id,
-                AudioDevice audio => audio.Id,
-                _ => string.Empty
-            };
-            if (id.Equals(selectedId, StringComparison.OrdinalIgnoreCase)) selected = index;
+            DisplayDevice display = _displays[index];
+            SendMessageString(combo, CB_ADDSTRING, nint.Zero, display.ToString());
+            if (display.Id.Equals(selectedId, StringComparison.OrdinalIgnoreCase)) selected = index + offset;
         }
-        if (selected < 0 && items.Count > 0) selected = 0;
+        if (selected < 0 && _displays.Count > 0) selected = 0;
         SendMessage(combo, CB_SETCURSEL, (nint)selected, nint.Zero);
     }
 
-    private DisplayDevice? SelectedDisplay(nint combo)
+    private DisplayDevice? SelectedDisplay(nint combo, bool optional)
     {
-        int index = (int)SendMessage(combo, CB_GETCURSEL, nint.Zero, nint.Zero);
+        int index = (int)SendMessage(combo, CB_GETCURSEL, nint.Zero, nint.Zero) - (optional ? 1 : 0);
         return index >= 0 && index < _displays.Count ? _displays[index] : null;
     }
 
-    private void BindAudioCombo(nint combo, string? selectedId, string? selectedContainerId)
+    private void BindAudioCombo(string? selectedId, string? selectedContainerId)
     {
-        SendMessage(combo, CB_RESETCONTENT, nint.Zero, nint.Zero);
+        SendMessage(_audio, CB_RESETCONTENT, nint.Zero, nint.Zero);
         int selected = -1;
         bool hasContainer = Guid.TryParse(selectedContainerId, out Guid selectedContainer);
         for (int index = 0; index < _audioDevices.Count; index++)
         {
             AudioDevice device = _audioDevices[index];
-            SendMessageString(combo, CB_ADDSTRING, nint.Zero, device.ToString());
-            if (device.Id.Equals(selectedId, StringComparison.OrdinalIgnoreCase))
-                selected = index;
-            else if (selected < 0 && hasContainer && device.ContainerId == selectedContainer)
-                selected = index;
+            SendMessageString(_audio, CB_ADDSTRING, nint.Zero, device.ToString());
+            if (device.Id.Equals(selectedId, StringComparison.OrdinalIgnoreCase)) selected = index;
+            else if (selected < 0 && hasContainer && device.ContainerId == selectedContainer) selected = index;
         }
         if (selected < 0 && _audioDevices.Count > 0) selected = 0;
-        SendMessage(combo, CB_SETCURSEL, (nint)selected, nint.Zero);
+        SendMessage(_audio, CB_SETCURSEL, (nint)selected, nint.Zero);
     }
 
-    private void BindOptionalDisplayCombo(nint combo, string? selectedId)
+    private AudioDevice? SelectedAudio()
     {
-        SendMessage(combo, CB_RESETCONTENT, nint.Zero, nint.Zero);
-        SendMessageString(combo, CB_ADDSTRING, nint.Zero, "Нет");
-        int selected = 0;
-        for (int index = 0; index < _displays.Count; index++)
-        {
-            DisplayDevice display = _displays[index];
-            SendMessageString(combo, CB_ADDSTRING, nint.Zero, display.ToString());
-            if (display.Id.Equals(selectedId, StringComparison.OrdinalIgnoreCase))
-                selected = index + 1;
-        }
-        SendMessage(combo, CB_SETCURSEL, (nint)selected, nint.Zero);
-    }
-
-    private DisplayDevice? SelectedOptionalDisplay(nint combo)
-    {
-        int index = (int)SendMessage(combo, CB_GETCURSEL, nint.Zero, nint.Zero) - 1;
-        return index >= 0 && index < _displays.Count ? _displays[index] : null;
-    }
-
-    private AudioDevice? SelectedAudio(nint combo)
-    {
-        int index = (int)SendMessage(combo, CB_GETCURSEL, nint.Zero, nint.Zero);
+        int index = (int)SendMessage(_audio, CB_GETCURSEL, nint.Zero, nint.Zero);
         return index >= 0 && index < _audioDevices.Count ? _audioDevices[index] : null;
     }
 
-    private void Save()
+    private void CreateScenario()
     {
-        AudioDevice? firstAudio = SelectedAudio(_audio1);
-        AudioDevice? secondAudio = SelectedAudio(_audio2);
-        var first = new ScenarioDefinition
+        CaptureEditorDraft();
+        if (_selectedIndex >= 0 && !_workingScenarios[_selectedIndex].IsComplete)
         {
-            Name = GetText(_name1).Trim(),
-            DisplayId = SelectedDisplay(_display1)?.Id ?? string.Empty,
-            SecondaryDisplayId = SelectedOptionalDisplay(_secondaryDisplay1)?.Id ?? string.Empty,
-            AudioDeviceId = firstAudio?.Id ?? string.Empty,
-            AudioDeviceContainerId = firstAudio?.ContainerId?.ToString("D") ??
-                _settings.Current.Scenario1?.AudioDeviceContainerId ?? string.Empty
-        };
-        var second = new ScenarioDefinition
-        {
-            Name = GetText(_name2).Trim(),
-            DisplayId = SelectedDisplay(_display2)?.Id ?? string.Empty,
-            SecondaryDisplayId = SelectedOptionalDisplay(_secondaryDisplay2)?.Id ?? string.Empty,
-            AudioDeviceId = secondAudio?.Id ?? string.Empty,
-            AudioDeviceContainerId = secondAudio?.ContainerId?.ToString("D") ??
-                _settings.Current.Scenario2?.AudioDeviceContainerId ?? string.Empty
-        };
-        if (!first.IsComplete || !second.IsComplete)
-        {
-            SetWindowText(_status, "Для обоих сценариев укажите название, дисплей и аудиоустройство.");
+            SetWindowText(_status, "Сначала завершите текущий сценарий или удалите его.");
             return;
         }
-        if ((!string.IsNullOrWhiteSpace(first.SecondaryDisplayId) &&
-             first.SecondaryDisplayId.Equals(first.DisplayId, StringComparison.OrdinalIgnoreCase)) ||
-            (!string.IsNullOrWhiteSpace(second.SecondaryDisplayId) &&
-             second.SecondaryDisplayId.Equals(second.DisplayId, StringComparison.OrdinalIgnoreCase)))
-        {
-            SetWindowText(_status, "Основной и второй дисплей в сценарии должны отличаться.");
-            return;
-        }
-        try
-        {
-            _settings.Current.Scenario1 = first;
-            _settings.Current.Scenario2 = second;
-            _settings.Save();
-            _tray.Refresh();
-            DestroyWindow(_window);
-        }
-        catch (Exception ex)
-        {
-            SettingsStore.Log(ex);
-            SetWindowText(_status, $"Не удалось сохранить настройки: {ex.Message}");
-        }
+        _workingScenarios.Add(new ScenarioDefinition());
+        _selectedIndex = _workingScenarios.Count - 1;
+        ReloadScenarioList();
+        ShowSelectedScenario();
+        SetWindowText(_status, "Настройте новый сценарий и нажмите «Сохранить».");
+    }
+
+    private void SelectScenario()
+    {
+        if (_loading) return;
+        int index = (int)SendMessage(_scenarioList, LB_GETCURSEL, nint.Zero, nint.Zero);
+        if (index == _selectedIndex) return;
+        CaptureEditorDraft();
+        _selectedIndex = index;
+        ShowSelectedScenario();
+        SetWindowText(_status, string.Empty);
+    }
+
+    private void DeleteScenario()
+    {
+        if (_selectedIndex < 0 || _selectedIndex >= _workingScenarios.Count) return;
+        ScenarioDefinition scenario = _workingScenarios[_selectedIndex];
+        if (MessageBox(_window, $"Удалить сценарий «{scenario.Name}»?", "Room Switcher Tray",
+            MB_YESNO | MB_ICONWARNING) != IdYes) return;
+        _workingScenarios.RemoveAt(_selectedIndex);
+        if (_settings.Current.ActiveScenarioId == scenario.Id) _settings.Current.ActiveScenarioId = null;
+        _settings.Current.Scenarios.RemoveAll(item => item.Id == scenario.Id);
+        _settings.Save();
+        _tray.Refresh();
+        _selectedIndex = _workingScenarios.Count == 0 ? -1 : Math.Min(_selectedIndex, _workingScenarios.Count - 1);
+        ReloadScenarioList();
+        ShowSelectedScenario();
+        SetWindowText(_status, "Сценарий удалён.");
+    }
+
+    private bool SaveEditor()
+    {
+        CaptureEditorDraft();
+        if (_selectedIndex < 0 || _selectedIndex >= _workingScenarios.Count)
+        { SetWindowText(_status, "Создайте сценарий."); return false; }
+        ScenarioDefinition current = _workingScenarios[_selectedIndex];
+        if (string.IsNullOrWhiteSpace(current.Name))
+        { SetWindowText(_status, "Введите название сценария."); return false; }
+        if (current.DisplayIds.Count == 0)
+        { SetWindowText(_status, "Выберите монитор 1."); return false; }
+        if (current.DisplayIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != current.DisplayIds.Count)
+        { SetWindowText(_status, "Мониторы в одном сценарии не должны повторяться."); return false; }
+        if (string.IsNullOrWhiteSpace(current.AudioDeviceId))
+        { SetWindowText(_status, "Выберите аудиоустройство."); return false; }
+        if (_workingScenarios.Any(s => !s.IsComplete))
+        { SetWindowText(_status, "Завершите настройку всех созданных сценариев."); return false; }
+        PersistWorkingScenarios();
+        ReloadScenarioList();
+        SetWindowText(_status, "Сценарии сохранены.");
+        return true;
+    }
+
+    private void PersistWorkingScenarios()
+    {
+        _settings.Current.Scenarios = _workingScenarios.Select(s => s.Clone()).ToList();
+        if (_settings.Current.ActiveScenarioId.HasValue &&
+            _settings.Current.Scenarios.All(s => s.Id != _settings.Current.ActiveScenarioId.Value))
+            _settings.Current.ActiveScenarioId = null;
+        _settings.Save();
+        _tray.Refresh();
+    }
+
+    private async Task SaveAndApplyAsync()
+    {
+        if (!SaveEditor()) return;
+        Guid id = _workingScenarios[_selectedIndex].Id;
+        SetBusy(true);
+        try { await _tray.ApplyScenarioAsync(id); }
+        finally { SetBusy(false); }
+    }
+
+    private void SetEditorEnabled(bool enabled)
+    {
+        EnableWindow(_name, enabled);
+        foreach (nint combo in _monitorCombos) EnableWindow(combo, enabled);
+        EnableWindow(_audio, enabled); EnableWindow(_delete, enabled);
+        EnableWindow(_save, enabled); EnableWindow(_saveApply, enabled);
     }
 
     private void SetBusy(bool busy)
     {
         EnableWindow(_refresh, !busy);
-        EnableWindow(_save, !busy);
+        EnableWindow(_save, !busy && _selectedIndex >= 0);
+        EnableWindow(_saveApply, !busy && _selectedIndex >= 0);
     }
 
     private static string GetText(nint window)
@@ -378,17 +376,18 @@ public sealed class SettingsWindow : IDisposable
     {
         if (message == WM_COMMAND)
         {
-            int id = unchecked((int)(wParam.ToUInt64() & 0xFFFF));
-            if (id == IdRefresh) _ = ReloadDevicesAsync();
-            else if (id == IdSave) Save();
+            ulong command = wParam.ToUInt64();
+            int id = (int)(command & 0xFFFF), notification = (int)((command >> 16) & 0xFFFF);
+            if (id == IdScenarioList && notification == LBN_SELCHANGE) SelectScenario();
+            else if (id == IdCreate) CreateScenario();
+            else if (id == IdDelete) DeleteScenario();
+            else if (id == IdRefresh) _ = ReloadDevicesAsync();
+            else if (id == IdSave) SaveEditor();
+            else if (id == IdSaveApply) _ = SaveAndApplyAsync();
             else if (id == IdCancel) DestroyWindow(window);
             return nint.Zero;
         }
-        if (message == WM_CLOSE)
-        {
-            DestroyWindow(window);
-            return nint.Zero;
-        }
+        if (message == WM_CLOSE) { DestroyWindow(window); return nint.Zero; }
         if (message == WM_NCDESTROY)
         {
             _window = nint.Zero;
@@ -409,8 +408,7 @@ public sealed class SettingsWindow : IDisposable
         if (pointer != nint.Zero)
         {
             var handle = GCHandle.FromIntPtr(pointer);
-            if (handle.Target is SettingsWindow settings)
-                return settings.HandleMessage(window, message, wParam, lParam);
+            if (handle.Target is SettingsWindow settings) return settings.HandleMessage(window, message, wParam, lParam);
         }
         return DefWindowProc(window, message, wParam, lParam);
     }
@@ -427,22 +425,16 @@ public sealed class SettingsWindow : IDisposable
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct WNDCLASSEX
     {
-        public uint cbSize, style;
-        public WindowProcedure lpfnWndProc;
-        public int cbClsExtra, cbWndExtra;
-        public nint hInstance, hIcon, hCursor, hbrBackground;
-        public string? lpszMenuName, lpszClassName;
-        public nint hIconSm;
+        public uint cbSize, style; public WindowProcedure lpfnWndProc;
+        public int cbClsExtra, cbWndExtra; public nint hInstance, hIcon, hCursor, hbrBackground;
+        public string? lpszMenuName, lpszClassName; public nint hIconSm;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct CREATESTRUCT
     {
-        public nint lpCreateParams, hInstance, hMenu, hwndParent;
-        public int cy, cx, y, x;
-        public int style;
-        public nint lpszName, lpszClass;
-        public uint dwExStyle;
+        public nint lpCreateParams, hInstance, hMenu, hwndParent; public int cy, cx, y, x;
+        public int style; public nint lpszName, lpszClass; public uint dwExStyle;
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern nint GetModuleHandle(string? name);
@@ -461,6 +453,7 @@ public sealed class SettingsWindow : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(nint window, StringBuilder text, int maxCount);
     [DllImport("user32.dll")] private static extern int GetWindowTextLength(nint window);
     [DllImport("user32.dll")] private static extern bool EnableWindow(nint window, bool enable);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int MessageBox(nint window, string text, string caption, uint type);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern nint SetWindowLongPtr(nint window, int index, nint value);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);
 }

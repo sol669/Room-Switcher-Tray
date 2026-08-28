@@ -7,11 +7,10 @@ public sealed class ScenarioService(
 {
     private readonly SemaphoreSlim _switchLock = new(1, 1);
 
-    public async Task<ApplyResult> ApplyAsync(int slot)
+    public async Task<ApplyResult> ApplyAsync(Guid scenarioId)
     {
-        ScenarioDefinition? scenario = slot == 1
-            ? settings.Current.Scenario1
-            : settings.Current.Scenario2;
+        ScenarioDefinition? scenario = settings.Current.Scenarios
+            .FirstOrDefault(item => item.Id == scenarioId);
         if (scenario?.IsComplete != true)
             return new ApplyResult(false, "Сценарий не настроен.");
 
@@ -29,7 +28,7 @@ public sealed class ScenarioService(
             scenario.AudioDeviceId = selectedAudio.Id;
             if (selectedAudio.ContainerId.HasValue)
                 scenario.AudioDeviceContainerId = selectedAudio.ContainerId.Value.ToString("D");
-            settings.Current.ActiveScenario = slot;
+            settings.Current.ActiveScenarioId = scenario.Id;
             settings.Save();
             return new ApplyResult(true, $"Сценарий «{scenario.Name}» применён.");
         }

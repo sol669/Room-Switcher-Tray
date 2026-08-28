@@ -32,7 +32,7 @@ internal static class TrayIconFactory
         graphics.DrawLine(pen, 10, 29, 22, 29);
         graphics.DrawArc(pen, -5, 12, 20, 20, 270, 90);
 
-        if (activeScenario is 1 or 2)
+        if (activeScenario is >= 1 and <= 9)
         {
             using var font = new Font("Segoe UI", 11, FontStyle.Bold, GraphicsUnit.Pixel);
             using var brush = new SolidBrush(color);

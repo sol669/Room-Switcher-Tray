@@ -7,10 +7,9 @@ public sealed class TrayService : IDisposable
 {
     private const uint TrayMessage = TrayNative.WM_APP + 1;
     private const uint SwitchCommand = 1000;
-    private const uint Scenario1Command = 1001;
-    private const uint Scenario2Command = 1002;
-    private const uint SettingsCommand = 1003;
-    private const uint ExitCommand = 1004;
+    private const uint ScenarioCommandBase = 2000;
+    private const uint SettingsCommand = 3000;
+    private const uint ExitCommand = 3001;
 
     private readonly SettingsStore _settings;
     private readonly ScenarioService _scenarios;
@@ -44,7 +43,7 @@ public sealed class TrayService : IDisposable
         _window = TrayNative.CreateWindowEx(0, className, "Room Switcher Tray", 0,
             0, 0, 0, 0, nint.Zero, nint.Zero, instance, nint.Zero);
 
-        _icon = TrayIconFactory.Create(_settings.Current.ActiveScenario);
+        _icon = TrayIconFactory.Create(GetActiveNumber());
         _notifyData = new TrayNative.NOTIFYICONDATA
         {
             cbSize = (uint)Marshal.SizeOf<TrayNative.NOTIFYICONDATA>(),
@@ -88,16 +87,17 @@ public sealed class TrayService : IDisposable
         {
             if (_settings.IsConfigured)
             {
-                int next = GetNextSlot();
-                ScenarioDefinition nextScenario = GetScenario(next)!;
+                ScenarioDefinition nextScenario = GetNextScenario();
                 TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DEFAULT,
                     SwitchCommand, $"Переключить на «{nextScenario.Name}»");
-                TrayNative.AppendMenu(menu, TrayNative.MF_STRING |
-                    (_settings.Current.ActiveScenario == 1 ? TrayNative.MF_CHECKED : 0),
-                    Scenario1Command, _settings.Current.Scenario1!.Name);
-                TrayNative.AppendMenu(menu, TrayNative.MF_STRING |
-                    (_settings.Current.ActiveScenario == 2 ? TrayNative.MF_CHECKED : 0),
-                    Scenario2Command, _settings.Current.Scenario2!.Name);
+                for (int index = 0; index < _settings.Current.Scenarios.Count; index++)
+                {
+                    ScenarioDefinition scenario = _settings.Current.Scenarios[index];
+                    TrayNative.AppendMenu(menu, TrayNative.MF_STRING |
+                        (_settings.Current.ActiveScenarioId == scenario.Id
+                            ? TrayNative.MF_CHECKED : 0),
+                        ScenarioCommandBase + (uint)index, scenario.Name);
+                }
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
             }
             else
@@ -127,11 +127,16 @@ public sealed class TrayService : IDisposable
 
     private void Execute(uint command)
     {
+        if (command >= ScenarioCommandBase &&
+            command < ScenarioCommandBase + _settings.Current.Scenarios.Count)
+        {
+            int index = (int)(command - ScenarioCommandBase);
+            _ = ApplyAsync(_settings.Current.Scenarios[index].Id);
+            return;
+        }
         switch (command)
         {
             case SwitchCommand: ApplyNext(); break;
-            case Scenario1Command: _ = ApplyAsync(1); break;
-            case Scenario2Command: _ = ApplyAsync(2); break;
             case SettingsCommand: ShowSettings(); break;
             case ExitCommand: App.Quit(); break;
         }
@@ -144,19 +149,32 @@ public sealed class TrayService : IDisposable
             ShowSettings();
             return;
         }
-        _ = ApplyAsync(GetNextSlot());
+        _ = ApplyAsync(GetNextScenario().Id);
     }
 
-    private int GetNextSlot() => _settings.Current.ActiveScenario == 1 ? 2 : 1;
-    private ScenarioDefinition? GetScenario(int slot) =>
-        slot == 1 ? _settings.Current.Scenario1 : _settings.Current.Scenario2;
-
-    private async Task ApplyAsync(int slot)
+    private ScenarioDefinition GetNextScenario()
     {
-        ApplyResult result = await _scenarios.ApplyAsync(slot);
+        int activeIndex = _settings.Current.Scenarios.FindIndex(scenario =>
+            scenario.Id == _settings.Current.ActiveScenarioId);
+        int nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % _settings.Current.Scenarios.Count;
+        return _settings.Current.Scenarios[nextIndex];
+    }
+
+    private int GetActiveNumber()
+    {
+        int index = _settings.Current.Scenarios.FindIndex(scenario =>
+            scenario.Id == _settings.Current.ActiveScenarioId);
+        return index is >= 0 and < 9 ? index + 1 : 0;
+    }
+
+    private async Task ApplyAsync(Guid scenarioId)
+    {
+        ApplyResult result = await _scenarios.ApplyAsync(scenarioId);
         ShowNotification(result.Message, result.Success);
         Refresh();
     }
+
+    internal Task ApplyScenarioAsync(Guid scenarioId) => ApplyAsync(scenarioId);
 
     public void ShowSettings()
     {
@@ -181,7 +199,7 @@ public sealed class TrayService : IDisposable
 
     internal void Refresh()
     {
-        nint newIcon = TrayIconFactory.Create(_settings.Current.ActiveScenario);
+        nint newIcon = TrayIconFactory.Create(GetActiveNumber());
         nint oldIcon = _icon;
         _icon = newIcon;
         _notifyData.hIcon = newIcon;
@@ -195,7 +213,7 @@ public sealed class TrayService : IDisposable
     {
         if (!_settings.IsConfigured)
             return "Room Switcher Tray\nТребуется настройка";
-        ScenarioDefinition next = GetScenario(GetNextSlot())!;
+        ScenarioDefinition next = GetNextScenario();
         return $"Room Switcher Tray\nДвойной клик: {next.Name}";
     }
 
