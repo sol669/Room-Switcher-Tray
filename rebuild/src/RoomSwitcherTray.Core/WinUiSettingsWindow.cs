@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Text;
 using RoomSwitcherTray.Core.Services;
 using System.Diagnostics;
 using Windows.System;
@@ -17,7 +18,6 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private readonly List<AudioDevice> _audio = [];
     private readonly Grid _root = new();
     private readonly ContentControl _pageHost = new();
-    private readonly NavigationView _navigation = new() { IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed, IsSettingsVisible = false, PaneDisplayMode = NavigationViewPaneDisplayMode.Left };
     private ListView? _scenarioList, _deviceList;
     private TextBox? _scenarioName, _deviceAlias;
     private ComboBox[] _monitorBoxes = new ComboBox[4];
@@ -74,16 +74,17 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private void BuildShell(string page)
     {
         _root.RowDefinitions.Clear(); _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _navigation.MenuItems.Clear();
-        _navigation.MenuItems.Add(NavItem("general", T("General"), Symbol.Setting));
-        _navigation.MenuItems.Add(NavItem("scenarios", T("Scenarios"), Symbol.List));
-        _navigation.MenuItems.Add(NavItem("devices", T("Devices"), Symbol.Folder));
-        _navigation.SelectionChanged -= NavigationChanged; _navigation.SelectionChanged += NavigationChanged;
-        _navigation.Content = _pageHost;
-        Grid.SetRow(_navigation, 0);
+        var main = new Grid(); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) }); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var menu = new StackPanel { Spacing = 8, Margin = new Thickness(16, 20, 12, 12) };
+        menu.Children.Add(new TextBlock { Text = "RoomSwitcher", FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 0, 14) });
+        menu.Children.Add(NavButton(T("General"), "general", Symbol.Setting));
+        menu.Children.Add(NavButton(T("Scenarios"), "scenarios", Symbol.List));
+        menu.Children.Add(NavButton(T("Devices"), "devices", Symbol.Folder));
+        Grid.SetColumn(menu, 0); main.Children.Add(menu); Grid.SetColumn(_pageHost, 1); main.Children.Add(_pageHost);
+        Grid.SetRow(main, 0);
         var footer = new TextBlock { Text = T("Footer"), Margin = new Thickness(20, 10, 20, 12), Opacity = .65 };
         Grid.SetRow(footer, 1);
-        _root.Children.Clear(); _root.Children.Add(_navigation); _root.Children.Add(footer);
+        _root.Children.Clear(); _root.Children.Add(main); _root.Children.Add(footer);
         _root.KeyDown -= RootKeyDown; _root.KeyDown += RootKeyDown;
         Content = _root;
         _currentPage = page;
@@ -91,15 +92,18 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         ApplyTheme();
     }
 
-    private static NavigationViewItem NavItem(string tag, string text, Symbol symbol) => new() { Tag = tag, Content = text, Icon = new SymbolIcon(symbol) };
-    private void NavigationChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args) => ShowPage((string)((NavigationViewItem)args.SelectedItem).Tag);
+    private Button NavButton(string text, string page, Symbol symbol)
+    {
+        var button = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 }; row.Children.Add(new SymbolIcon(symbol)); row.Children.Add(new TextBlock { Text = text }); button.Content = row; button.Click += (_, _) => ShowPage(page); return button;
+    }
     private void ShowPage(string page)
     {
         _currentPage = page;
         _pageHost.Content = page switch { "scenarios" => BuildScenariosPage(), "devices" => BuildDevicesPage(), _ => BuildGeneralPage() };
     }
     private static StackPanel Panel() => new() { Spacing = 12, Margin = new Thickness(28) };
-    private static TextBlock Heading(string text) => new() { Text = text, Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] };
+    private static TextBlock Heading(string text) => new() { Text = text, FontSize = 26, FontWeight = FontWeights.SemiBold };
     private static TextBlock Label(string text) => new() { Text = text, Opacity = .72 };
 
     private UIElement BuildGeneralPage()
@@ -111,13 +115,13 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         panel.Children.Add(Label(T("Language")));
         _languageBox = new ComboBox { ItemsSource = new[] { "Русский", "English" }, SelectedIndex = (int)_settings.Current.Language, Width = 300 };
         _languageBox.SelectionChanged += (_, _) => { if (!_loading) { _settings.Current.Language = (AppLanguage)_languageBox.SelectedIndex; _settings.Save(); _tray.Refresh(); BuildShell("general"); } }; panel.Children.Add(_languageBox);
-        panel.Children.Add(new TextBlock { Text = T("Startup"), Margin = new Thickness(0, 12, 0, 0), Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
+        panel.Children.Add(new TextBlock { Text = T("Startup"), Margin = new Thickness(0, 12, 0, 0), FontSize = 18, FontWeight = FontWeights.SemiBold });
         _autostartToggle = new ToggleSwitch { Header = T("Autostart"), IsOn = StartupService.IsEnabled() }; panel.Children.Add(_autostartToggle);
         panel.Children.Add(Label(T("StartupMode")));
         _startupModeBox = new ComboBox { ItemsSource = English ? new[] { "Don't change current configuration", "Restore last scenario", "Always use selected scenario" } : new[] { "Не менять текущую конфигурацию", "Восстановить последний сценарий", "Всегда включать выбранный сценарий" }, SelectedIndex = (int)_settings.Current.StartupScenarioMode, Width = 420 }; panel.Children.Add(_startupModeBox);
         _startupScenarioBox = new ComboBox { DisplayMemberPath = "Name", SelectedValuePath = "Id", ItemsSource = _scenarios.Where(item => item.IsComplete).ToList(), SelectedValue = _settings.Current.StartupScenarioId, Width = 420 }; panel.Children.Add(_startupScenarioBox);
         var saveGeneral = new Button { Content = T("Save"), HorizontalAlignment = HorizontalAlignment.Left }; saveGeneral.Click += (_, _) => SaveGeneral(); panel.Children.Add(saveGeneral);
-        panel.Children.Add(new TextBlock { Text = T("Hotkey"), Margin = new Thickness(0, 12, 0, 0), Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
+        panel.Children.Add(new TextBlock { Text = T("Hotkey"), Margin = new Thickness(0, 12, 0, 0), FontSize = 18, FontWeight = FontWeights.SemiBold });
         var hotkeyLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         hotkeyLine.Children.Add(new TextBlock { Text = TrayService.FormatHotKey(_settings.Current.SwitchScenarioHotKey), VerticalAlignment = VerticalAlignment.Center, MinWidth = 220 });
         var capture = new Button { Content = T("Change") }; capture.Click += (_, _) => BeginCapture(capture); hotkeyLine.Children.Add(capture); panel.Children.Add(hotkeyLine);
