@@ -41,7 +41,10 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _scenarios = settings.Current.Scenarios.Select(item => item.Clone()).ToList();
         _root.IsTabStop = true;
         Title = "RoomSwitcher";
-        AppWindow.Resize(new SizeInt32(1120, 760));
+        // AppWindow uses physical pixels.  A wider fixed size leaves room for the
+        // RoomSwitcher navigation pane and the Shutdown-style horizontal rows,
+        // including on Windows installations with high display scaling.
+        AppWindow.Resize(new SizeInt32(1680, 1080));
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.IsResizable = false;
@@ -129,7 +132,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     {
         var panel = Panel(); panel.Children.Add(Heading(T("General")));
         panel.Children.Add(Section(T("Behavior")));
-        _startupChoiceBox = new ComboBox { DisplayMemberPath = "Name", Width = 420 };
+        _startupChoiceBox = new ComboBox { DisplayMemberPath = "Name", Width = 360 };
         var startupChoices = new List<StartupChoice> { new(null, T("LastLoaded")) };
         startupChoices.AddRange(_scenarios.Where(s => s.IsComplete).Select(s => new StartupChoice(s.Id, s.Name)));
         _startupChoiceBox.ItemsSource = startupChoices;
@@ -143,9 +146,9 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         panel.Children.Add(Section(T("System")));
         _autostartToggle = new ToggleSwitch { IsOn = StartupService.IsEnabled(), OnContent = English ? "On" : "Вкл.", OffContent = English ? "Off" : "Откл." };
         panel.Children.Add(SettingRow(T("Autostart"), _autostartToggle));
-        _themeBox = new ComboBox { ItemsSource = English ? new[] { "Like Windows", "Light", "Dark" } : new[] { "Как в Windows", "Светлая", "Тёмная" }, SelectedIndex = (int)_settings.Current.Theme, Width = 420 };
+        _themeBox = new ComboBox { ItemsSource = English ? new[] { "Like Windows", "Light", "Dark" } : new[] { "Как в Windows", "Светлая", "Тёмная" }, SelectedIndex = (int)_settings.Current.Theme, Width = 360 };
         panel.Children.Add(SettingRow(T("Theme"), _themeBox));
-        _languageBox = new ComboBox { ItemsSource = new[] { "Русский", "English" }, SelectedIndex = (int)_settings.Current.Language, Width = 420 };
+        _languageBox = new ComboBox { ItemsSource = new[] { "Русский", "English" }, SelectedIndex = (int)_settings.Current.Language, Width = 360 };
         panel.Children.Add(SettingRow(T("Language"), _languageBox));
         return panel;
     }
