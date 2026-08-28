@@ -7,12 +7,13 @@ internal static class DisplayNative
     internal const uint QDC_ALL_PATHS = 0x00000001;
     internal const uint DISPLAYCONFIG_PATH_ACTIVE = 0x00000001;
     internal const uint DISPLAYCONFIG_PATH_MODE_IDX_INVALID = 0xFFFFFFFF;
-    internal const uint SDC_TOPOLOGY_INTERNAL = 0x00000001;
+    internal const uint SDC_TOPOLOGY_SUPPLIED = 0x00000010;
     internal const uint SDC_USE_SUPPLIED_DISPLAY_CONFIG = 0x00000020;
     internal const uint SDC_VALIDATE = 0x00000040;
     internal const uint SDC_APPLY = 0x00000080;
     internal const uint SDC_SAVE_TO_DATABASE = 0x00000200;
     internal const uint SDC_ALLOW_CHANGES = 0x00000400;
+    internal const uint SDC_ALLOW_PATH_ORDER_CHANGES = 0x00002000;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct LUID

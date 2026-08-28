@@ -51,25 +51,45 @@ public sealed class DisplayService
             paths.Add(candidate);
         }
 
-        var requested = new List<DisplayNative.PATH_INFO>(requestedIds.Length);
+        var requestedCandidates = new List<DisplayNative.PATH_INFO[]>(requestedIds.Length);
         foreach (string id in requestedIds)
         {
             if (!candidates.TryGetValue(id, out List<DisplayNative.PATH_INFO>? paths))
                 throw new InvalidOperationException("Выбранный дисплей сейчас недоступен.");
 
-            DisplayNative.PATH_INFO path = paths
+            DisplayNative.PATH_INFO[] orderedPaths = paths
                 .OrderByDescending(item =>
                     (item.flags & DisplayNative.DISPLAYCONFIG_PATH_ACTIVE) != 0)
                 .ThenByDescending(item => item.targetInfo.targetAvailable)
-                .First();
-            path.flags = DisplayNative.DISPLAYCONFIG_PATH_ACTIVE;
-            path.sourceInfo.modeInfoIdx = DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
-            path.targetInfo.modeInfoIdx = DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
-            requested.Add(path);
+                .Select(PreparePath)
+                .ToArray();
+            requestedCandidates.Add(orderedPaths);
         }
 
+        // Restore Windows' persisted topology for exactly these displays. This keeps the
+        // user's resolution, primary monitor and relative positions without owning them.
+        foreach (DisplayNative.PATH_INFO[] topology in BuildExtendedTopologies(requestedCandidates))
+        {
+            uint databaseFlags = DisplayNative.SDC_TOPOLOGY_SUPPLIED |
+                DisplayNative.SDC_ALLOW_PATH_ORDER_CHANGES;
+            int databaseError = DisplayNative.SetDisplayConfig((uint)topology.Length, topology,
+                0, null, databaseFlags | DisplayNative.SDC_VALIDATE);
+            if (databaseError != 0)
+                continue;
+
+            databaseError = DisplayNative.SetDisplayConfig((uint)topology.Length, topology,
+                0, null, databaseFlags | DisplayNative.SDC_APPLY);
+            if (databaseError == 0)
+                return;
+        }
+
+        // There is no saved topology yet. Ask Windows to create one, but only from paths
+        // with distinct sources so a two-display scenario is extended, never cloned.
+        DisplayNative.PATH_INFO[] requestedPaths = BuildExtendedTopologies(requestedCandidates)
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Не удалось подобрать раздельные видеовыходы для выбранных дисплеев.");
         uint common = DisplayNative.SDC_USE_SUPPLIED_DISPLAY_CONFIG | DisplayNative.SDC_ALLOW_CHANGES;
-        DisplayNative.PATH_INFO[] requestedPaths = requested.ToArray();
         int error = DisplayNative.SetDisplayConfig((uint)requestedPaths.Length, requestedPaths, 0, null,
             common | DisplayNative.SDC_VALIDATE);
         if (error != 0)
@@ -80,6 +100,42 @@ public sealed class DisplayService
         if (error != 0)
             throw new Win32Exception(error, "Не удалось включить выбранные дисплеи.");
     }
+
+    private static DisplayNative.PATH_INFO PreparePath(DisplayNative.PATH_INFO path)
+    {
+        path.flags = DisplayNative.DISPLAYCONFIG_PATH_ACTIVE;
+        path.sourceInfo.modeInfoIdx = DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
+        path.targetInfo.modeInfoIdx = DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID;
+        return path;
+    }
+
+    private static IEnumerable<DisplayNative.PATH_INFO[]> BuildExtendedTopologies(
+        IReadOnlyList<DisplayNative.PATH_INFO[]> candidates)
+    {
+        if (candidates.Count == 1)
+        {
+            foreach (DisplayNative.PATH_INFO path in candidates[0])
+                yield return [path];
+            yield break;
+        }
+
+        foreach (DisplayNative.PATH_INFO first in candidates[0])
+        {
+            foreach (DisplayNative.PATH_INFO second in candidates[1])
+            {
+                if (HaveSameSource(first, second))
+                    continue;
+                yield return [first, second];
+            }
+        }
+    }
+
+    private static bool HaveSameSource(
+        DisplayNative.PATH_INFO first,
+        DisplayNative.PATH_INFO second) =>
+        first.sourceInfo.adapterId.LowPart == second.sourceInfo.adapterId.LowPart &&
+        first.sourceInfo.adapterId.HighPart == second.sourceInfo.adapterId.HighPart &&
+        first.sourceInfo.id == second.sourceInfo.id;
 
     private static DisplayNative.PATH_INFO[] QueryPaths()
     {
