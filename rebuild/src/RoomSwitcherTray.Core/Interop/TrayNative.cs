@@ -5,11 +5,14 @@ namespace RoomSwitcherTray.Core.Interop;
 internal static class TrayNative
 {
     internal const uint WM_APP = 0x8000;
-    internal const uint WM_LBUTTONDBLCLK = 0x0203;
+    internal const uint WM_HOTKEY = 0x0312;
     internal const uint WM_RBUTTONUP = 0x0205;
     internal const uint TPM_RIGHTBUTTON = 0x0002;
     internal const uint TPM_RETURNCMD = 0x0100;
     internal const uint MF_STRING = 0;
+    internal const uint MF_GRAYED = 0x0001;
+    internal const uint MF_DISABLED = 0x0002;
+    internal const uint MF_POPUP = 0x0010;
     internal const uint MF_SEPARATOR = 0x0800;
     internal const uint MF_CHECKED = 0x0008;
     internal const uint MF_DEFAULT = 0x1000;
@@ -22,6 +25,9 @@ internal static class TrayNative
     internal const uint NIM_DELETE = 2;
     internal const uint NIIF_INFO = 1;
     internal const uint NIIF_ERROR = 3;
+    internal const uint MOD_CONTROL = 0x0002;
+    internal const uint MOD_NOREPEAT = 0x4000;
+    internal const uint VK_SPACE = 0x20;
 
     internal delegate nint WindowProcedure(nint window, uint message, nuint wParam, nint lParam);
 
@@ -79,4 +85,6 @@ internal static class TrayNative
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] internal static extern bool PostMessage(nint window, uint message, nuint wParam, nint lParam);
     [DllImport("user32.dll")] internal static extern bool DestroyIcon(nint icon);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint virtualKey);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern bool UnregisterHotKey(nint window, int id);
 }

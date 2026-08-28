@@ -88,6 +88,15 @@ public enum AudioDeviceState
     Unplugged
 }
 
+/// <summary>Live information shown for a display that is active right now.</summary>
+public sealed record ActiveDisplayStatus(
+    string Id,
+    string Name,
+    int Width,
+    int Height,
+    bool HdrSupported,
+    bool HdrEnabled);
+
 public enum AudioDeviceKind
 {
     Other,
@@ -116,5 +125,8 @@ public sealed record AudioDevice(
             label;
     }
 }
+
+/// <summary>Live master-volume state of the current Windows render endpoint.</summary>
+public sealed record AudioEndpointStatus(string Name, int VolumePercent, bool IsMuted);
 
 public sealed record ApplyResult(bool Success, string Message);

@@ -5,6 +5,10 @@ namespace RoomSwitcherTray.Core.Interop;
 internal static class DisplayNative
 {
     internal const uint QDC_ALL_PATHS = 0x00000001;
+    internal const uint QDC_ONLY_ACTIVE_PATHS = 0x00000002;
+    internal const uint DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE = 1;
+    internal const uint DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO = 9;
+    internal const uint DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE = 10;
     internal const uint DISPLAYCONFIG_PATH_ACTIVE = 0x00000001;
     internal const uint DISPLAYCONFIG_PATH_MODE_IDX_INVALID = 0xFFFFFFFF;
     internal const uint SDC_TOPOLOGY_SUPPLIED = 0x00000010;
@@ -118,6 +122,24 @@ internal static class DisplayNative
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string monitorDevicePath;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ADVANCED_COLOR_INFO
+    {
+        public DEVICE_INFO_HEADER header;
+        // Bit 0 = supported, bit 1 = enabled. The remaining flags are deliberately
+        // ignored: they do not change whether the tray can offer a HDR toggle.
+        public uint value;
+        public uint colorEncoding;
+        public uint bitsPerColorChannel;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SET_ADVANCED_COLOR_STATE
+    {
+        public DEVICE_INFO_HEADER header;
+        [MarshalAs(UnmanagedType.Bool)] public bool enableAdvancedColor;
+    }
+
     [DllImport("user32.dll")]
     internal static extern int GetDisplayConfigBufferSizes(uint flags, out uint pathCount, out uint modeCount);
     [DllImport("user32.dll")]
@@ -128,4 +150,8 @@ internal static class DisplayNative
         uint modeCount, [In] MODE_INFO[]? modes, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     internal static extern int DisplayConfigGetDeviceInfo(ref TARGET_DEVICE_NAME request);
+    [DllImport("user32.dll")]
+    internal static extern int DisplayConfigGetDeviceInfo(ref ADVANCED_COLOR_INFO request);
+    [DllImport("user32.dll")]
+    internal static extern int DisplayConfigSetDeviceInfo(ref SET_ADVANCED_COLOR_STATE request);
 }

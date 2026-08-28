@@ -103,6 +103,67 @@ public sealed class DisplayService
             throw new Win32Exception(error, "Не удалось включить выбранные дисплеи.");
     }
 
+    public IReadOnlyList<ActiveDisplayStatus> GetActiveDisplayStatuses(
+        IReadOnlyCollection<string> configuredDisplayIds)
+    {
+        var requested = configuredDisplayIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (requested.Count == 0) return [];
+
+        DisplayConfiguration configuration = QueryConfiguration(DisplayNative.QDC_ONLY_ACTIVE_PATHS);
+        var result = new Dictionary<string, ActiveDisplayStatus>(StringComparer.OrdinalIgnoreCase);
+        foreach (DisplayNative.PATH_INFO path in configuration.Paths)
+        {
+            (string id, string name, _) = GetIdentity(path.targetInfo.adapterId, path.targetInfo.id);
+            if (string.IsNullOrWhiteSpace(id) || !requested.Contains(id)) continue;
+
+            int width = 0, height = 0;
+            if (path.sourceInfo.modeInfoIdx != DisplayNative.DISPLAYCONFIG_PATH_MODE_IDX_INVALID &&
+                path.sourceInfo.modeInfoIdx < configuration.Modes.Length)
+            {
+                DisplayNative.MODE_INFO mode = configuration.Modes[path.sourceInfo.modeInfoIdx];
+                if (mode.infoType == DisplayNative.DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)
+                {
+                    width = unchecked((int)mode.mode.source.width);
+                    height = unchecked((int)mode.mode.source.height);
+                }
+            }
+
+            (bool supported, bool enabled) = GetHdrState(path.targetInfo.adapterId, path.targetInfo.id);
+            result[id] = new ActiveDisplayStatus(id, name, width, height, supported, enabled);
+        }
+        return result.Values.OrderBy(status => status.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    public void SetHdr(string displayId, bool enabled)
+    {
+        DisplayConfiguration configuration = QueryConfiguration(DisplayNative.QDC_ONLY_ACTIVE_PATHS);
+        foreach (DisplayNative.PATH_INFO path in configuration.Paths)
+        {
+            (string id, _, _) = GetIdentity(path.targetInfo.adapterId, path.targetInfo.id);
+            if (!id.Equals(displayId, StringComparison.OrdinalIgnoreCase)) continue;
+
+            (bool supported, _) = GetHdrState(path.targetInfo.adapterId, path.targetInfo.id);
+            if (!supported)
+                throw new InvalidOperationException("Этот дисплей не поддерживает HDR.");
+
+            var request = new DisplayNative.SET_ADVANCED_COLOR_STATE
+            {
+                header = new DisplayNative.DEVICE_INFO_HEADER
+                {
+                    type = DisplayNative.DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE,
+                    size = (uint)Marshal.SizeOf<DisplayNative.SET_ADVANCED_COLOR_STATE>(),
+                    adapterId = path.targetInfo.adapterId,
+                    id = path.targetInfo.id
+                },
+                enableAdvancedColor = enabled
+            };
+            int error = DisplayNative.DisplayConfigSetDeviceInfo(ref request);
+            if (error != 0) throw new Win32Exception(error, "Windows не удалось изменить HDR.");
+            return;
+        }
+        throw new InvalidOperationException("Активный дисплей не найден.");
+    }
+
     private static DisplayNative.PATH_INFO PreparePath(DisplayNative.PATH_INFO path)
     {
         path.flags = DisplayNative.DISPLAYCONFIG_PATH_ACTIVE;
@@ -140,27 +201,51 @@ public sealed class DisplayService
         }
     }
 
-    private static DisplayNative.PATH_INFO[] QueryPaths()
+    private static (bool Supported, bool Enabled) GetHdrState(DisplayNative.LUID adapterId, uint targetId)
+    {
+        var request = new DisplayNative.ADVANCED_COLOR_INFO
+        {
+            header = new DisplayNative.DEVICE_INFO_HEADER
+            {
+                type = DisplayNative.DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+                size = (uint)Marshal.SizeOf<DisplayNative.ADVANCED_COLOR_INFO>(),
+                adapterId = adapterId,
+                id = targetId
+            }
+        };
+        if (DisplayNative.DisplayConfigGetDeviceInfo(ref request) != 0) return (false, false);
+        return ((request.value & 0x1) != 0, (request.value & 0x2) != 0);
+    }
+
+    private static DisplayNative.PATH_INFO[] QueryPaths() =>
+        QueryConfiguration(DisplayNative.QDC_ALL_PATHS).Paths;
+
+    private static DisplayConfiguration QueryConfiguration(uint flags)
     {
         for (int attempt = 0; attempt < 3; attempt++)
         {
-            int error = DisplayNative.GetDisplayConfigBufferSizes(DisplayNative.QDC_ALL_PATHS,
+            int error = DisplayNative.GetDisplayConfigBufferSizes(flags,
                 out uint pathCount, out uint modeCount);
             if (error != 0) throw new Win32Exception(error);
 
             var paths = new DisplayNative.PATH_INFO[pathCount];
             var modes = new DisplayNative.MODE_INFO[modeCount];
-            error = DisplayNative.QueryDisplayConfig(DisplayNative.QDC_ALL_PATHS,
+            error = DisplayNative.QueryDisplayConfig(flags,
                 ref pathCount, paths, ref modeCount, modes, nint.Zero);
             if (error == 0)
             {
                 Array.Resize(ref paths, (int)pathCount);
-                return paths;
+                Array.Resize(ref modes, (int)modeCount);
+                return new DisplayConfiguration(paths, modes);
             }
             if (error != 122) throw new Win32Exception(error);
         }
         throw new Win32Exception(122);
     }
+
+    private sealed record DisplayConfiguration(
+        DisplayNative.PATH_INFO[] Paths,
+        DisplayNative.MODE_INFO[] Modes);
 
     private static (string Id, string Name, Guid? ContainerId) GetIdentity(
         DisplayNative.LUID adapterId, uint targetId)

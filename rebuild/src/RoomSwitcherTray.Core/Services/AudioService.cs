@@ -51,6 +51,43 @@ public sealed class AudioService
         return Task.FromResult<IReadOnlyList<AudioDevice>>(GetRenderDevices());
     }
 
+    public AudioEndpointStatus? GetDefaultEndpointStatus()
+    {
+        IReadOnlyList<AudioDevice> devices = GetRenderDevices();
+        AudioDevice? device = devices.FirstOrDefault(item => item.IsDefault && item.IsActive);
+        if (device is null) return null;
+
+        IAudioEndpointVolume? volume = null;
+        try
+        {
+            volume = ActivateEndpointVolume(device.Id);
+            ThrowIfFailed(volume.GetMasterVolumeLevelScalar(out float level));
+            ThrowIfFailed(volume.GetMute(out bool muted));
+            int percent = Math.Clamp((int)Math.Round(level * 100), 0, 100);
+            string name = string.IsNullOrWhiteSpace(device.DisplayName)
+                ? device.Name
+                : $"{device.DisplayName} — HDMI/DisplayPort";
+            return new AudioEndpointStatus(name, percent, muted);
+        }
+        finally { Release(volume); }
+    }
+
+    public void SetDefaultEndpointMuted(bool muted)
+    {
+        string? deviceId = GetRenderDevices().FirstOrDefault(item => item.IsDefault && item.IsActive)?.Id;
+        if (string.IsNullOrWhiteSpace(deviceId))
+            throw new InvalidOperationException("Активное аудиоустройство не найдено.");
+
+        IAudioEndpointVolume? volume = null;
+        try
+        {
+            volume = ActivateEndpointVolume(deviceId);
+            Guid context = Guid.Empty;
+            ThrowIfFailed(volume.SetMute(muted, ref context));
+        }
+        finally { Release(volume); }
+    }
+
     public Task<IReadOnlyList<AudioDevice>> GetVisibleRenderDevicesAsync(
         IReadOnlyCollection<DisplayDevice> displays,
         params ScenarioDefinition?[] scenarios)
@@ -376,6 +413,26 @@ public sealed class AudioService
         [FieldOffset(8)] public uint uintValue;
     }
 
+    private static IAudioEndpointVolume ActivateEndpointVolume(string deviceId)
+    {
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDevice? device = null;
+        try
+        {
+            enumerator = (IMMDeviceEnumerator)(object)new MMDeviceEnumeratorComObject();
+            ThrowIfFailed(enumerator.GetDevice(deviceId, out device));
+            Guid iid = typeof(IAudioEndpointVolume).GUID;
+            ThrowIfFailed(device.Activate(ref iid, 23, nint.Zero, out nint instance));
+            try { return (IAudioEndpointVolume)Marshal.GetObjectForIUnknown(instance); }
+            finally { Marshal.Release(instance); }
+        }
+        finally
+        {
+            Release(device);
+            Release(enumerator);
+        }
+    }
+
     [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
     private sealed class MMDeviceEnumeratorComObject { }
 
@@ -413,6 +470,29 @@ public sealed class AudioService
         [PreserveSig] int GetValue(ref PROPERTYKEY key, out PROPVARIANT value);
         [PreserveSig] int SetValue(ref PROPERTYKEY key, ref PROPVARIANT value);
         [PreserveSig] int Commit();
+    }
+
+    [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAudioEndpointVolume
+    {
+        [PreserveSig] int RegisterControlChangeNotify(nint notify);
+        [PreserveSig] int UnregisterControlChangeNotify(nint notify);
+        [PreserveSig] int GetChannelCount(out uint channelCount);
+        [PreserveSig] int SetMasterVolumeLevel(float levelDb, ref Guid eventContext);
+        [PreserveSig] int SetMasterVolumeLevelScalar(float level, ref Guid eventContext);
+        [PreserveSig] int GetMasterVolumeLevel(out float levelDb);
+        [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+        [PreserveSig] int SetChannelVolumeLevel(uint channel, float levelDb, ref Guid eventContext);
+        [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, ref Guid eventContext);
+        [PreserveSig] int GetChannelVolumeLevel(uint channel, out float levelDb);
+        [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool muted, ref Guid eventContext);
+        [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool muted);
+        [PreserveSig] int GetVolumeStepInfo(out uint step, out uint stepCount);
+        [PreserveSig] int VolumeStepUp(ref Guid eventContext);
+        [PreserveSig] int VolumeStepDown(ref Guid eventContext);
+        [PreserveSig] int QueryHardwareSupport(out uint hardwareSupportMask);
+        [PreserveSig] int GetVolumeRange(out float minDb, out float maxDb, out float incrementDb);
     }
 
     [ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")]

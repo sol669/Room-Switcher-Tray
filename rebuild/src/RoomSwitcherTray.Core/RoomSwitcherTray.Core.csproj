@@ -14,9 +14,9 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishTrimmed>false</PublishTrimmed>
-    <Version>0.4.0</Version>
+    <Version>0.5.0</Version>
     <Authors>sol669</Authors>
-    <Product>Room Switcher Tray</Product>
+    <Product>RoomSwitcher</Product>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />

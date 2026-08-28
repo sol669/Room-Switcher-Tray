@@ -6,19 +6,24 @@ namespace RoomSwitcherTray.Core.Services;
 public sealed class TrayService : IDisposable
 {
     private const uint TrayMessage = TrayNative.WM_APP + 1;
+    private const int SwitchHotKeyId = 1;
     private const uint SwitchCommand = 1000;
     private const uint ScenarioCommandBase = 2000;
     private const uint SettingsCommand = 3000;
     private const uint ExitCommand = 3001;
+    private const uint HdrCommandBase = 4000;
+    private const uint MuteCommand = 5000;
 
     private readonly SettingsStore _settings;
     private readonly ScenarioService _scenarios;
     private readonly TrayNative.WindowProcedure _windowProcedure;
     private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher;
+    private readonly Dictionary<uint, ActiveDisplayStatus> _hdrCommands = [];
     private nint _window;
     private nint _icon;
     private TrayNative.NOTIFYICONDATA _notifyData;
     private SettingsWindow? _settingsWindow;
+    private bool _hotKeyRegistered;
 
     public TrayService(SettingsStore settings, ScenarioService scenarios)
     {
@@ -30,7 +35,7 @@ public sealed class TrayService : IDisposable
 
     public void Initialize()
     {
-        const string className = "sol669.RoomSwitcherTray.Core.TrayWindow";
+        const string className = "sol669.RoomSwitcher.Core.TrayWindow";
         nint instance = TrayNative.GetModuleHandle(null);
         var windowClass = new TrayNative.WNDCLASSEX
         {
@@ -40,23 +45,22 @@ public sealed class TrayService : IDisposable
             lpszClassName = className
         };
         TrayNative.RegisterClassEx(ref windowClass);
-        _window = TrayNative.CreateWindowEx(0, className, "Room Switcher Tray", 0,
+        _window = TrayNative.CreateWindowEx(0, className, "RoomSwitcher", 0,
             0, 0, 0, 0, nint.Zero, nint.Zero, instance, nint.Zero);
 
-        _icon = TrayIconFactory.Create(GetActiveNumber());
+        _icon = TrayIconFactory.Create();
         _notifyData = new TrayNative.NOTIFYICONDATA
         {
-            cbSize = (uint)Marshal.SizeOf<TrayNative.NOTIFYICONDATA>(),
-            hWnd = _window,
-            uID = 1,
+            cbSize = (uint)Marshal.SizeOf<TrayNative.NOTIFYICONDATA>(), hWnd = _window, uID = 1,
             uFlags = TrayNative.NIF_MESSAGE | TrayNative.NIF_ICON | TrayNative.NIF_TIP,
-            uCallbackMessage = TrayMessage,
-            hIcon = _icon,
-            szTip = BuildTooltip(),
-            szInfo = string.Empty,
-            szInfoTitle = string.Empty
+            uCallbackMessage = TrayMessage, hIcon = _icon, szTip = BuildTooltip(),
+            szInfo = string.Empty, szInfoTitle = string.Empty
         };
         TrayNative.Shell_NotifyIcon(TrayNative.NIM_ADD, ref _notifyData);
+        _hotKeyRegistered = TrayNative.RegisterHotKey(_window, SwitchHotKeyId,
+            TrayNative.MOD_CONTROL | TrayNative.MOD_NOREPEAT, TrayNative.VK_SPACE);
+        if (!_hotKeyRegistered)
+            ShowNotification("Не удалось назначить Ctrl + Пробел: комбинация уже занята.", false);
     }
 
     private nint WindowProc(nint window, uint message, nuint wParam, nint lParam)
@@ -65,18 +69,16 @@ public sealed class TrayService : IDisposable
         {
             if (message == TrayMessage)
             {
-                uint mouseMessage = unchecked((uint)lParam.ToInt64());
-                if (mouseMessage == TrayNative.WM_RBUTTONUP)
-                    ShowMenu();
-                else if (mouseMessage == TrayNative.WM_LBUTTONDBLCLK)
-                    _dispatcher.TryEnqueue(ApplyNext);
+                if (unchecked((uint)lParam.ToInt64()) == TrayNative.WM_RBUTTONUP) ShowMenu();
+                return nint.Zero;
+            }
+            if (message == TrayNative.WM_HOTKEY && (int)wParam == SwitchHotKeyId)
+            {
+                _dispatcher.TryEnqueue(ApplyNext);
                 return nint.Zero;
             }
         }
-        catch (Exception ex)
-        {
-            SettingsStore.Log(ex);
-        }
+        catch (Exception ex) { SettingsStore.Log(ex); }
         return TrayNative.DefWindowProc(window, message, wParam, lParam);
     }
 
@@ -85,20 +87,23 @@ public sealed class TrayService : IDisposable
         nint menu = TrayNative.CreatePopupMenu();
         try
         {
+            _hdrCommands.Clear();
+            TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED, 0, "RoomSwitcher");
+            TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
             if (_settings.IsConfigured)
             {
-                ScenarioDefinition nextScenario = GetNextScenario();
-                TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DEFAULT,
-                    SwitchCommand, $"Переключить на «{nextScenario.Name}»");
-                for (int index = 0; index < _settings.Current.Scenarios.Count; index++)
-                {
-                    ScenarioDefinition scenario = _settings.Current.Scenarios[index];
+                foreach ((ScenarioDefinition scenario, int index) in _settings.Current.Scenarios.Select((item, index) => (item, index)))
                     TrayNative.AppendMenu(menu, TrayNative.MF_STRING |
-                        (_settings.Current.ActiveScenarioId == scenario.Id
-                            ? TrayNative.MF_CHECKED : 0),
+                        (_settings.Current.ActiveScenarioId == scenario.Id ? TrayNative.MF_CHECKED : 0),
                         ScenarioCommandBase + (uint)index, scenario.Name);
-                }
+
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
+                TrayNative.AppendMenu(menu, TrayNative.MF_STRING, SwitchCommand,
+                    "Переключить следующий сценарий\tCtrl + Пробел");
+                TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
+                BuildStatusSection(menu);
+                TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
+                TrayNative.AppendMenu(menu, TrayNative.MF_STRING, SettingsCommand, "Настройки…");
             }
             else
             {
@@ -106,66 +111,114 @@ public sealed class TrayService : IDisposable
                     SettingsCommand, "Настроить сценарии…");
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
             }
-
-            if (_settings.IsConfigured)
-                TrayNative.AppendMenu(menu, TrayNative.MF_STRING, SettingsCommand, "Настройки…");
             TrayNative.AppendMenu(menu, TrayNative.MF_STRING, ExitCommand, "Выход");
 
             TrayNative.GetCursorPos(out TrayNative.POINT point);
             TrayNative.SetForegroundWindow(_window);
-            uint command = TrayNative.TrackPopupMenu(menu,
-                TrayNative.TPM_RIGHTBUTTON | TrayNative.TPM_RETURNCMD,
+            uint command = TrayNative.TrackPopupMenu(menu, TrayNative.TPM_RIGHTBUTTON | TrayNative.TPM_RETURNCMD,
                 point.X, point.Y, 0, _window, nint.Zero);
             TrayNative.PostMessage(_window, 0, 0, 0);
             _dispatcher.TryEnqueue(() => Execute(command));
         }
-        finally
+        finally { TrayNative.DestroyMenu(menu); }
+    }
+
+    private void BuildStatusSection(nint menu)
+    {
+        TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED, 0, "Активные устройства");
+        bool added = false;
+        try
         {
-            TrayNative.DestroyMenu(menu);
+            ScenarioDefinition? activeScenario = GetActiveScenario();
+            if (activeScenario is not null)
+            {
+                foreach (ActiveDisplayStatus display in App.Displays.GetActiveDisplayStatuses(activeScenario.DisplayIds))
+                {
+                    string resolution = display.Width > 0 && display.Height > 0
+                        ? $"{display.Width} × {display.Height}" : "разрешение неизвестно";
+                    string text = $"{display.Name}\t{resolution} · {(display.HdrEnabled ? "HDR" : "SDR")}";
+                    if (display.HdrSupported)
+                    {
+                        uint command = HdrCommandBase + (uint)_hdrCommands.Count;
+                        _hdrCommands[command] = display;
+                        nint submenu = TrayNative.CreatePopupMenu();
+                        TrayNative.AppendMenu(submenu, TrayNative.MF_STRING, command,
+                            display.HdrEnabled ? "Выключить HDR" : "Включить HDR");
+                        TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP, (nuint)submenu, text);
+                    }
+                    else TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED, 0, text);
+                    added = true;
+                }
+            }
+
+            AudioEndpointStatus? audio = App.Audio.GetDefaultEndpointStatus();
+            if (audio is not null)
+            {
+                string level = audio.IsMuted ? $"без звука · {audio.VolumePercent}%" : $"{audio.VolumePercent}%";
+                nint submenu = TrayNative.CreatePopupMenu();
+                TrayNative.AppendMenu(submenu, TrayNative.MF_STRING |
+                    (audio.IsMuted ? TrayNative.MF_CHECKED : 0), MuteCommand, "Без звука");
+                TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP,
+                    (nuint)submenu, $"{audio.Name}\t{level}");
+                added = true;
+            }
         }
+        catch (Exception ex) { SettingsStore.Log(ex); }
+        if (!added)
+            TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED,
+                0, "Нет данных об активных устройствах");
     }
 
     private void Execute(uint command)
     {
-        if (command >= ScenarioCommandBase &&
-            command < ScenarioCommandBase + _settings.Current.Scenarios.Count)
-        {
-            int index = (int)(command - ScenarioCommandBase);
-            _ = ApplyAsync(_settings.Current.Scenarios[index].Id);
-            return;
-        }
+        if (command >= ScenarioCommandBase && command < ScenarioCommandBase + _settings.Current.Scenarios.Count)
+        { _ = ApplyAsync(_settings.Current.Scenarios[(int)(command - ScenarioCommandBase)].Id); return; }
+        if (_hdrCommands.TryGetValue(command, out ActiveDisplayStatus? display)) { _ = ToggleHdrAsync(display); return; }
         switch (command)
         {
             case SwitchCommand: ApplyNext(); break;
+            case MuteCommand: ToggleMute(); break;
             case SettingsCommand: ShowSettings(); break;
             case ExitCommand: App.Quit(); break;
         }
     }
 
+    private async Task ToggleHdrAsync(ActiveDisplayStatus display)
+    {
+        try
+        {
+            await Task.Run(() => App.Displays.SetHdr(display.Id, !display.HdrEnabled));
+            ShowNotification($"HDR для «{display.Name}» {(display.HdrEnabled ? "выключен" : "включён")}.", true);
+        }
+        catch (Exception ex) { SettingsStore.Log(ex); ShowNotification($"Не удалось изменить HDR: {ex.Message}", false); }
+    }
+
+    private void ToggleMute()
+    {
+        try
+        {
+            AudioEndpointStatus? current = App.Audio.GetDefaultEndpointStatus();
+            if (current is null) throw new InvalidOperationException("Активное аудиоустройство не найдено.");
+            App.Audio.SetDefaultEndpointMuted(!current.IsMuted);
+            ShowNotification(current.IsMuted ? "Звук включён." : "Звук выключен.", true);
+        }
+        catch (Exception ex) { SettingsStore.Log(ex); ShowNotification($"Не удалось изменить звук: {ex.Message}", false); }
+    }
+
     private void ApplyNext()
     {
-        if (!_settings.IsConfigured)
-        {
-            ShowSettings();
-            return;
-        }
+        if (!_settings.IsConfigured) { ShowSettings(); return; }
         _ = ApplyAsync(GetNextScenario().Id);
     }
 
     private ScenarioDefinition GetNextScenario()
     {
-        int activeIndex = _settings.Current.Scenarios.FindIndex(scenario =>
-            scenario.Id == _settings.Current.ActiveScenarioId);
-        int nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % _settings.Current.Scenarios.Count;
-        return _settings.Current.Scenarios[nextIndex];
+        int activeIndex = _settings.Current.Scenarios.FindIndex(s => s.Id == _settings.Current.ActiveScenarioId);
+        return _settings.Current.Scenarios[activeIndex < 0 ? 0 : (activeIndex + 1) % _settings.Current.Scenarios.Count];
     }
 
-    private int GetActiveNumber()
-    {
-        int index = _settings.Current.Scenarios.FindIndex(scenario =>
-            scenario.Id == _settings.Current.ActiveScenarioId);
-        return index is >= 0 and < 9 ? index + 1 : 0;
-    }
+    private ScenarioDefinition? GetActiveScenario() => _settings.Current.ActiveScenarioId is Guid id
+        ? _settings.Current.Scenarios.FirstOrDefault(scenario => scenario.Id == id) : null;
 
     private async Task ApplyAsync(Guid scenarioId)
     {
@@ -178,12 +231,7 @@ public sealed class TrayService : IDisposable
 
     public void ShowSettings()
     {
-        if (_settingsWindow is not null)
-        {
-            _settingsWindow.Activate();
-            return;
-        }
-
+        if (_settingsWindow is not null) { _settingsWindow.Activate(); return; }
         try
         {
             _settingsWindow = new SettingsWindow(_settings, this);
@@ -199,28 +247,17 @@ public sealed class TrayService : IDisposable
 
     internal void Refresh()
     {
-        nint newIcon = TrayIconFactory.Create(GetActiveNumber());
-        nint oldIcon = _icon;
-        _icon = newIcon;
-        _notifyData.hIcon = newIcon;
         _notifyData.szTip = BuildTooltip();
-        _notifyData.uFlags = TrayNative.NIF_ICON | TrayNative.NIF_TIP;
+        _notifyData.uFlags = TrayNative.NIF_TIP;
         TrayNative.Shell_NotifyIcon(TrayNative.NIM_MODIFY, ref _notifyData);
-        if (oldIcon != nint.Zero) TrayNative.DestroyIcon(oldIcon);
     }
 
-    private string BuildTooltip()
-    {
-        if (!_settings.IsConfigured)
-            return "Room Switcher Tray\nТребуется настройка";
-        ScenarioDefinition next = GetNextScenario();
-        return $"Room Switcher Tray\nДвойной клик: {next.Name}";
-    }
+    private string BuildTooltip() => GetActiveScenario()?.Name ?? "RoomSwitcher";
 
     private void ShowNotification(string message, bool success)
     {
         _notifyData.uFlags = TrayNative.NIF_INFO;
-        _notifyData.szInfoTitle = "Room Switcher Tray";
+        _notifyData.szInfoTitle = "RoomSwitcher";
         _notifyData.szInfo = message;
         _notifyData.dwInfoFlags = success ? TrayNative.NIIF_INFO : TrayNative.NIIF_ERROR;
         TrayNative.Shell_NotifyIcon(TrayNative.NIM_MODIFY, ref _notifyData);
@@ -230,14 +267,11 @@ public sealed class TrayService : IDisposable
     {
         if (_window != nint.Zero)
         {
+            if (_hotKeyRegistered) TrayNative.UnregisterHotKey(_window, SwitchHotKeyId);
             TrayNative.Shell_NotifyIcon(TrayNative.NIM_DELETE, ref _notifyData);
             TrayNative.DestroyWindow(_window);
             _window = nint.Zero;
         }
-        if (_icon != nint.Zero)
-        {
-            TrayNative.DestroyIcon(_icon);
-            _icon = nint.Zero;
-        }
+        if (_icon != nint.Zero) { TrayNative.DestroyIcon(_icon); _icon = nint.Zero; }
     }
 }

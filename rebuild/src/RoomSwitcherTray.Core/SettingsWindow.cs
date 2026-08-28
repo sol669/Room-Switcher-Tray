@@ -65,7 +65,7 @@ public sealed class SettingsWindow : IDisposable
         const int width = 920, height = 660;
         int x = Math.Max(0, (GetSystemMetrics(0) - width) / 2);
         int y = Math.Max(0, (GetSystemMetrics(1) - height) / 2);
-        _window = CreateWindowEx(0, WindowClass, "Room Switcher Tray — сценарии",
+        _window = CreateWindowEx(0, WindowClass, "RoomSwitcher — сценарии",
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
             x, y, width, height, nint.Zero, nint.Zero, GetModuleHandle(null),
             GCHandle.ToIntPtr(_selfHandle));
@@ -295,7 +295,7 @@ public sealed class SettingsWindow : IDisposable
     {
         if (_selectedIndex < 0 || _selectedIndex >= _workingScenarios.Count) return;
         ScenarioDefinition scenario = _workingScenarios[_selectedIndex];
-        if (MessageBox(_window, $"Удалить сценарий «{scenario.Name}»?", "Room Switcher Tray",
+        if (MessageBox(_window, $"Удалить сценарий «{scenario.Name}»?", "RoomSwitcher",
             MB_YESNO | MB_ICONWARNING) != IdYes) return;
         _workingScenarios.RemoveAt(_selectedIndex);
         if (_settings.Current.ActiveScenarioId == scenario.Id) _settings.Current.ActiveScenarioId = null;
