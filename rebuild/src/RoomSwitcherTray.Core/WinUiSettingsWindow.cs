@@ -121,7 +121,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "Monitors") => "Monitors",
         (true, "AudioDevices") => "Audio devices", (true, "DeviceAlias") => "Name in RoomSwitcher",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "FooterVersion") => "RoomSwitcher 0.8.1",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "FooterVersion") => "RoomSwitcher 0.8.2",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -132,7 +132,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "Monitors") => "Мониторы",
         (false, "AudioDevices") => "Аудиоустройства", (false, "DeviceAlias") => "Имя в RoomSwitcher",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "FooterVersion") => "RoomSwitcher 0.8.1",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "FooterVersion") => "RoomSwitcher 0.8.2",
         _ => key
     };
 
@@ -254,13 +254,19 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         panel.Children.Add(Section(T("Devices")));
         AddDeviceAliasRows(panel, T("Monitors"), _displays.Select(display => (display.Id, display.Name)));
         AddDeviceAliasRows(panel, T("AudioDevices"), _audio.Select(audio => (audio.Id, audio.DisplayName ?? audio.Name)));
-        _loading = false;
         var scroll = new ScrollViewer
         {
             Content = panel,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             HorizontalContentAlignment = HorizontalAlignment.Stretch
+        };
+        scroll.Loaded += (_, _) =>
+        {
+            // Controls can raise their initial change notifications only after
+            // their templates are attached. Those are not user edits.
+            _loading = false;
+            UpdateSaveButton();
         };
         return scroll;
     }
@@ -311,6 +317,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             });
             alias.TextChanged += (_, _) =>
             {
+                if (_loading) return;
                 string value = alias.Text.Trim();
                 if (string.IsNullOrWhiteSpace(value)) _pendingAliases.Remove(id);
                 else _pendingAliases[id] = value;
@@ -407,6 +414,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     }
     private bool SaveGeneral(bool rebuildShell = true)
     {
+        if (_saveButton is not null) _saveButton.IsEnabled = false;
         try
         {
             StartupService.SetEnabled(_pendingStartWithWindows);
@@ -430,11 +438,19 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
                 ApplyTheme();
                 UpdateSaveButton();
             }
+            _root.DispatcherQueue.TryEnqueue(() =>
+            {
+                // Deferred initialization events from a rebuilt page have now
+                // finished. The saved model is the new clean baseline.
+                ResetPendingGeneral();
+                UpdateSaveButton();
+            });
             return true;
         }
         catch (Exception ex)
         {
             SettingsStore.Log(ex);
+            UpdateSaveButton();
             return false;
         }
     }
