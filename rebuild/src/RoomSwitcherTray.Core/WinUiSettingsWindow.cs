@@ -2,9 +2,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Text;
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using RoomSwitcherTray.Core.Services;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.System;
 using Windows.UI;
@@ -44,18 +46,44 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         // AppWindow uses physical pixels.  A wider fixed size leaves room for the
         // RoomSwitcher navigation pane and the Shutdown-style horizontal rows,
         // including on Windows installations with high display scaling.
-        AppWindow.Resize(new SizeInt32(1680, 1080));
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.IsResizable = false;
-            presenter.IsMaximizable = false;
-        }
+        ConfigureWindow();
         Closed += (_, _) => ClosedByUser?.Invoke(this, EventArgs.Empty);
         BuildShell("general");
         _ = LoadDevicesAsync();
     }
 
     public void Dispose() => Close();
+
+    // Mirrors Shutdown's sizing model: logical dimensions are converted to the
+    // DPI of the monitor where the settings window is opened.
+    private void ConfigureWindow()
+    {
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        WindowId id = Win32Interop.GetWindowIdFromWindow(hwnd);
+        AppWindow window = AppWindow.GetFromWindowId(id);
+        const int logicalWidth = 920;  // Shutdown's 680 plus RoomSwitcher's navigation pane.
+        const int logicalHeight = 810;
+        double scale = Math.Max(1, GetDpiForWindow(hwnd) / 96.0);
+        int width = (int)Math.Round(logicalWidth * scale);
+        int height = (int)Math.Round(logicalHeight * scale);
+        GetCursorPos(out NativePoint cursor);
+        DisplayArea area = DisplayArea.GetFromPoint(new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Primary);
+        RectInt32 work = area.WorkArea;
+        window.MoveAndResize(new RectInt32(
+            work.X + Math.Max(0, (work.Width - width) / 2),
+            work.Y + Math.Max(0, (work.Height - height) / 2), width, height));
+        window.SetPresenter(AppWindowPresenterKind.Overlapped);
+        if (window.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.IsResizable = false;
+            presenter.IsMaximizable = false;
+            presenter.IsMinimizable = false;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X; public int Y; }
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
 
     private bool English => _settings.Current.Language == AppLanguage.English;
     private string T(string key) => (English, key) switch
