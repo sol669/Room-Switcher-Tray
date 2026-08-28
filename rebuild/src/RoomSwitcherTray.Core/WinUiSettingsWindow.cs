@@ -26,6 +26,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private TextBlock? _hotKeyHint;
     private ScenarioDefinition? _selectedScenario;
     private DeviceItem? _selectedDevice;
+    private string _currentPage = "general";
     private bool _loading, _capturingHotKey;
 
     public event EventHandler? ClosedByUser;
@@ -85,13 +86,18 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _root.Children.Clear(); _root.Children.Add(_navigation); _root.Children.Add(footer);
         _root.KeyDown -= RootKeyDown; _root.KeyDown += RootKeyDown;
         Content = _root;
-        _navigation.SelectedItem = _navigation.MenuItems.OfType<NavigationViewItem>().First(item => (string)item.Tag == page);
+        _currentPage = page;
+        ShowPage(page);
         ApplyTheme();
     }
 
     private static NavigationViewItem NavItem(string tag, string text, Symbol symbol) => new() { Tag = tag, Content = text, Icon = new SymbolIcon(symbol) };
     private void NavigationChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args) => ShowPage((string)((NavigationViewItem)args.SelectedItem).Tag);
-    private void ShowPage(string page) => _pageHost.Content = page switch { "scenarios" => BuildScenariosPage(), "devices" => BuildDevicesPage(), _ => BuildGeneralPage() };
+    private void ShowPage(string page)
+    {
+        _currentPage = page;
+        _pageHost.Content = page switch { "scenarios" => BuildScenariosPage(), "devices" => BuildDevicesPage(), _ => BuildGeneralPage() };
+    }
     private static StackPanel Panel() => new() { Spacing = 12, Margin = new Thickness(28) };
     private static TextBlock Heading(string text) => new() { Text = text, Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] };
     private static TextBlock Label(string text) => new() { Text = text, Opacity = .72 };
@@ -209,6 +215,6 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     }
     private async Task LoadDevicesAsync()
     {
-        try { _displays.Clear(); _displays.AddRange(await Task.Run(App.Displays.GetDisplays)); _audio.Clear(); _audio.AddRange(await App.Audio.GetVisibleRenderDevicesAsync(_displays, _scenarios.Cast<ScenarioDefinition?>().ToArray())); if (_navigation.SelectedItem is NavigationViewItem item) ShowPage((string)item.Tag); } catch (Exception ex) { SettingsStore.Log(ex); }
+        try { _displays.Clear(); _displays.AddRange(await Task.Run(App.Displays.GetDisplays)); _audio.Clear(); _audio.AddRange(await App.Audio.GetVisibleRenderDevicesAsync(_displays, _scenarios.Cast<ScenarioDefinition?>().ToArray())); ShowPage(_currentPage); } catch (Exception ex) { SettingsStore.Log(ex); }
     }
 }
