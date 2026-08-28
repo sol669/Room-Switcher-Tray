@@ -6,6 +6,7 @@ public sealed class ScenarioDefinition
     public string DisplayId { get; set; } = string.Empty;
     public string SecondaryDisplayId { get; set; } = string.Empty;
     public string AudioDeviceId { get; set; } = string.Empty;
+    public string AudioDeviceContainerId { get; set; } = string.Empty;
 
     public IReadOnlyList<string> DisplayIds => string.IsNullOrWhiteSpace(SecondaryDisplayId) ||
         SecondaryDisplayId.Equals(DisplayId, StringComparison.OrdinalIgnoreCase)
@@ -22,7 +23,8 @@ public sealed class ScenarioDefinition
         Name = Name,
         DisplayId = DisplayId,
         SecondaryDisplayId = SecondaryDisplayId,
-        AudioDeviceId = AudioDeviceId
+        AudioDeviceId = AudioDeviceId,
+        AudioDeviceContainerId = AudioDeviceContainerId
     };
 }
 
@@ -33,7 +35,12 @@ public sealed class AppSettings
     public int ActiveScenario { get; set; }
 }
 
-public sealed record DisplayDevice(string Id, string Name, bool IsActive, bool IsAvailable)
+public sealed record DisplayDevice(
+    string Id,
+    string Name,
+    bool IsActive,
+    bool IsAvailable,
+    Guid? ContainerId)
 {
     public override string ToString() => IsActive ? $"{Name} — используется" : Name;
 }
@@ -46,15 +53,33 @@ public enum AudioDeviceState
     Unplugged
 }
 
-public sealed record AudioDevice(string Id, string Name, bool IsDefault, AudioDeviceState State)
+public enum AudioDeviceKind
+{
+    Other,
+    Display
+}
+
+public sealed record AudioDevice(
+    string Id,
+    string Name,
+    bool IsDefault,
+    AudioDeviceState State,
+    Guid? ContainerId,
+    AudioDeviceKind Kind,
+    string? DisplayName = null)
 {
     public bool IsActive => State == AudioDeviceState.Active;
 
-    public override string ToString() =>
-        IsDefault ? $"{Name} — используется" :
-        State == AudioDeviceState.Disabled ? $"{Name} — отключено в Windows" :
-        State != AudioDeviceState.Active ? $"{Name} — сейчас недоступно" :
-        Name;
+    public override string ToString()
+    {
+        string label = Kind == AudioDeviceKind.Display && !string.IsNullOrWhiteSpace(DisplayName)
+            ? $"{DisplayName} — HDMI/DisplayPort"
+            : Name;
+        return IsDefault ? $"{label} — используется" :
+            State == AudioDeviceState.Disabled ? $"{label} — отключено в Windows" :
+            State != AudioDeviceState.Active ? $"{label} — сейчас недоступно" :
+            label;
+    }
 }
 
 public sealed record ApplyResult(bool Success, string Message);

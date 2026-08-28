@@ -24,7 +24,11 @@ public sealed class ScenarioService(
             // HDMI/DisplayPort audio endpoints often appear a few seconds after
             // Windows has activated the corresponding display path.
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
-            await audio.SetDefaultWhenAvailableAsync(scenario.AudioDeviceId, timeout.Token);
+            AudioDevice selectedAudio = await audio.SetDefaultWhenAvailableAsync(
+                scenario.AudioDeviceId, scenario.AudioDeviceContainerId, timeout.Token);
+            scenario.AudioDeviceId = selectedAudio.Id;
+            if (selectedAudio.ContainerId.HasValue)
+                scenario.AudioDeviceContainerId = selectedAudio.ContainerId.Value.ToString("D");
             settings.Current.ActiveScenario = slot;
             settings.Save();
             return new ApplyResult(true, $"Сценарий «{scenario.Name}» применён.");

@@ -209,14 +209,19 @@ public sealed class SettingsWindow : IDisposable
                 _settings.Current.Scenario2?.SecondaryDisplayId;
             string? audio1 = SelectedAudio(_audio1)?.Id ?? _settings.Current.Scenario1?.AudioDeviceId;
             string? audio2 = SelectedAudio(_audio2)?.Id ?? _settings.Current.Scenario2?.AudioDeviceId;
+            string? audioContainer1 = SelectedAudio(_audio1)?.ContainerId?.ToString("D") ??
+                _settings.Current.Scenario1?.AudioDeviceContainerId;
+            string? audioContainer2 = SelectedAudio(_audio2)?.ContainerId?.ToString("D") ??
+                _settings.Current.Scenario2?.AudioDeviceContainerId;
             _displays = await Task.Run(App.Displays.GetDisplays);
-            _audioDevices = await App.Audio.GetRenderDevicesAsync();
+            _audioDevices = await App.Audio.GetVisibleRenderDevicesAsync(_displays,
+                _settings.Current.Scenario1, _settings.Current.Scenario2);
             BindCombo(_display1, _displays, display1);
             BindCombo(_display2, _displays, display2);
             BindOptionalDisplayCombo(_secondaryDisplay1, secondaryDisplay1);
             BindOptionalDisplayCombo(_secondaryDisplay2, secondaryDisplay2);
-            BindCombo(_audio1, _audioDevices, audio1);
-            BindCombo(_audio2, _audioDevices, audio2);
+            BindAudioCombo(_audio1, audio1, audioContainer1);
+            BindAudioCombo(_audio2, audio2, audioContainer2);
             SetWindowText(_name1, name1.Length > 0 ? name1 : _settings.Current.Scenario1?.Name ?? string.Empty);
             SetWindowText(_name2, name2.Length > 0 ? name2 : _settings.Current.Scenario2?.Name ?? string.Empty);
             SetWindowText(_status, _displays.Count == 0 || _audioDevices.Count == 0
@@ -260,6 +265,24 @@ public sealed class SettingsWindow : IDisposable
         return index >= 0 && index < _displays.Count ? _displays[index] : null;
     }
 
+    private void BindAudioCombo(nint combo, string? selectedId, string? selectedContainerId)
+    {
+        SendMessage(combo, CB_RESETCONTENT, nint.Zero, nint.Zero);
+        int selected = -1;
+        bool hasContainer = Guid.TryParse(selectedContainerId, out Guid selectedContainer);
+        for (int index = 0; index < _audioDevices.Count; index++)
+        {
+            AudioDevice device = _audioDevices[index];
+            SendMessageString(combo, CB_ADDSTRING, nint.Zero, device.ToString());
+            if (device.Id.Equals(selectedId, StringComparison.OrdinalIgnoreCase))
+                selected = index;
+            else if (selected < 0 && hasContainer && device.ContainerId == selectedContainer)
+                selected = index;
+        }
+        if (selected < 0 && _audioDevices.Count > 0) selected = 0;
+        SendMessage(combo, CB_SETCURSEL, (nint)selected, nint.Zero);
+    }
+
     private void BindOptionalDisplayCombo(nint combo, string? selectedId)
     {
         SendMessage(combo, CB_RESETCONTENT, nint.Zero, nint.Zero);
@@ -289,19 +312,25 @@ public sealed class SettingsWindow : IDisposable
 
     private void Save()
     {
+        AudioDevice? firstAudio = SelectedAudio(_audio1);
+        AudioDevice? secondAudio = SelectedAudio(_audio2);
         var first = new ScenarioDefinition
         {
             Name = GetText(_name1).Trim(),
             DisplayId = SelectedDisplay(_display1)?.Id ?? string.Empty,
             SecondaryDisplayId = SelectedOptionalDisplay(_secondaryDisplay1)?.Id ?? string.Empty,
-            AudioDeviceId = SelectedAudio(_audio1)?.Id ?? string.Empty
+            AudioDeviceId = firstAudio?.Id ?? string.Empty,
+            AudioDeviceContainerId = firstAudio?.ContainerId?.ToString("D") ??
+                _settings.Current.Scenario1?.AudioDeviceContainerId ?? string.Empty
         };
         var second = new ScenarioDefinition
         {
             Name = GetText(_name2).Trim(),
             DisplayId = SelectedDisplay(_display2)?.Id ?? string.Empty,
             SecondaryDisplayId = SelectedOptionalDisplay(_secondaryDisplay2)?.Id ?? string.Empty,
-            AudioDeviceId = SelectedAudio(_audio2)?.Id ?? string.Empty
+            AudioDeviceId = secondAudio?.Id ?? string.Empty,
+            AudioDeviceContainerId = secondAudio?.ContainerId?.ToString("D") ??
+                _settings.Current.Scenario2?.AudioDeviceContainerId ?? string.Empty
         };
         if (!first.IsComplete || !second.IsComplete)
         {

@@ -13,12 +13,14 @@ public sealed class DisplayService
 
         foreach (DisplayNative.PATH_INFO path in paths)
         {
-            (string id, string name) = GetIdentity(path.targetInfo.adapterId, path.targetInfo.id);
+            (string id, string name, Guid? containerId) =
+                GetIdentity(path.targetInfo.adapterId, path.targetInfo.id);
             if (string.IsNullOrWhiteSpace(id))
                 continue;
 
             bool active = (path.flags & DisplayNative.DISPLAYCONFIG_PATH_ACTIVE) != 0;
-            var device = new DisplayDevice(id, name, active, path.targetInfo.targetAvailable || active);
+            var device = new DisplayDevice(id, name, active,
+                path.targetInfo.targetAvailable || active, containerId);
             if (!result.TryGetValue(id, out DisplayDevice? existing) || (!existing.IsActive && active))
                 result[id] = device;
         }
@@ -44,7 +46,7 @@ public sealed class DisplayService
             StringComparer.OrdinalIgnoreCase);
         foreach (DisplayNative.PATH_INFO candidate in allPaths)
         {
-            (string id, _) = GetIdentity(candidate.targetInfo.adapterId, candidate.targetInfo.id);
+            (string id, _, _) = GetIdentity(candidate.targetInfo.adapterId, candidate.targetInfo.id);
             if (string.IsNullOrWhiteSpace(id)) continue;
             if (!candidates.TryGetValue(id, out List<DisplayNative.PATH_INFO>? paths))
                 candidates[id] = paths = [];
@@ -159,7 +161,8 @@ public sealed class DisplayService
         throw new Win32Exception(122);
     }
 
-    private static (string Id, string Name) GetIdentity(DisplayNative.LUID adapterId, uint targetId)
+    private static (string Id, string Name, Guid? ContainerId) GetIdentity(
+        DisplayNative.LUID adapterId, uint targetId)
     {
         var request = new DisplayNative.TARGET_DEVICE_NAME
         {
@@ -172,11 +175,12 @@ public sealed class DisplayService
             }
         };
         if (DisplayNative.DisplayConfigGetDeviceInfo(ref request) != 0)
-            return (string.Empty, string.Empty);
+            return (string.Empty, string.Empty, null);
 
         string name = string.IsNullOrWhiteSpace(request.monitorFriendlyDeviceName)
             ? $"Дисплей {targetId + 1}"
             : request.monitorFriendlyDeviceName;
-        return (request.monitorDevicePath ?? string.Empty, name);
+        string path = request.monitorDevicePath ?? string.Empty;
+        return (path, name, DeviceIdentityService.GetContainerId(path));
     }
 }
