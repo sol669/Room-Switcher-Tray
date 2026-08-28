@@ -11,6 +11,7 @@ public sealed class ScenarioDefinition
     public string AudioDeviceContainerId { get; set; } = string.Empty;
     // Null means "do not change". Zero means mute; positive values are percentages.
     public int? VolumePercent { get; set; }
+    public ScenarioIcon Icon { get; set; }
 
     [JsonIgnore]
     public bool IsComplete =>
@@ -27,7 +28,8 @@ public sealed class ScenarioDefinition
         DisplayIds = [.. DisplayIds],
         AudioDeviceId = AudioDeviceId,
         AudioDeviceContainerId = AudioDeviceContainerId,
-        VolumePercent = VolumePercent
+        VolumePercent = VolumePercent,
+        Icon = Icon
     };
 }
 
@@ -38,6 +40,10 @@ public enum StartupScenarioMode
     AlwaysUseScenario
 }
 
+public enum AppThemeMode { System, Light, Dark }
+public enum AppLanguage { Russian, English }
+public enum ScenarioIcon { Automatic, Desktop, Television, Sofa, Gamepad }
+
 public sealed class AppSettings
 {
     public List<ScenarioDefinition> Scenarios { get; set; } = [];
@@ -47,6 +53,8 @@ public sealed class AppSettings
     public Guid? StartupScenarioId { get; set; }
     public HotKeyDefinition SwitchScenarioHotKey { get; set; } = HotKeyDefinition.Default;
     public Dictionary<string, string> DeviceAliases { get; set; } = [];
+    public AppThemeMode Theme { get; set; }
+    public AppLanguage Language { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LegacyScenarioDefinition? Scenario1 { get; set; }

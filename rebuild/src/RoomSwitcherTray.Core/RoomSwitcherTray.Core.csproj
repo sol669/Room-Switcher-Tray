@@ -14,7 +14,7 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishTrimmed>false</PublishTrimmed>
-    <Version>0.6.2</Version>
+    <Version>0.7.0</Version>
     <Authors>sol669</Authors>
     <Product>RoomSwitcher</Product>
   </PropertyGroup>

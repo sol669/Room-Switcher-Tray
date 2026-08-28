@@ -3,7 +3,7 @@
 RoomSwitcher is a native Windows 10/11 tray utility for switching a
 complete display and audio setup with one click.
 
-The current Core test build (`0.6.2`) supports:
+The current Core test build (`0.7.0`) supports:
 
 - user-defined scenarios;
 - stable display and Core Audio endpoint identifiers;
@@ -17,6 +17,7 @@ The current Core test build (`0.6.2`) supports:
 - configurable global shortcut for switching to the next scenario;
 - user-defined display and audio device names.
 - a safe RDP tray mode that shows only live remote-session status and mute.
+- a WinUI settings shell with theme, Russian/English, and scenario icon choices.
 - JSON settings in `%LOCALAPPDATA%\sol669\Room Switcher Tray`;
 - a self-contained Windows x64 build and small update-only archives.
 
