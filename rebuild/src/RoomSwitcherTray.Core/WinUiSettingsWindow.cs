@@ -106,7 +106,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "SystemName") => "System name",
         (true, "FriendlyName") => "Name in RoomSwitcher", (true, "SaveName") => "Save name",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.14 · sol669 ·",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.7.15 · sol669 ·",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -117,7 +117,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "SystemName") => "Системное имя",
         (false, "FriendlyName") => "Имя в RoomSwitcher", (false, "SaveName") => "Сохранить имя",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.14 · sol669 ·",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.7.15 · sol669 ·",
         _ => key
     };
 
