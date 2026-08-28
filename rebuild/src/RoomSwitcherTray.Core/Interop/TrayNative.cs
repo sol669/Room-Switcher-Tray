@@ -82,6 +82,7 @@ internal static class TrayNative
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] internal static extern bool Shell_NotifyIcon(uint message, ref NOTIFYICONDATA data);
     [DllImport("user32.dll")] internal static extern nint CreatePopupMenu();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern bool AppendMenu(nint menu, uint flags, nuint id, string? text);
+    [DllImport("user32.dll")] internal static extern bool SetMenuDefaultItem(nint menu, uint item, uint byPosition);
     [DllImport("user32.dll")] internal static extern uint TrackPopupMenu(nint menu, uint flags, int x, int y, int reserved, nint owner, nint rect);
     [DllImport("user32.dll")] internal static extern bool DestroyMenu(nint menu);
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out POINT point);

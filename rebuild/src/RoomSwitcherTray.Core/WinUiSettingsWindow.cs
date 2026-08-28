@@ -121,7 +121,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
         (true, "OpenDisplay") => "Save and open Display settings", (true, "Monitors") => "Monitors",
         (true, "AudioDevices") => "Audio devices", (true, "DeviceAlias") => "Name in RoomSwitcher",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "Footer") => "RoomSwitcher 0.8.0 · sol669 ·",
+        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "FooterVersion") => "RoomSwitcher 0.8.1",
         (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
         (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
         (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
@@ -132,7 +132,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
         (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "Monitors") => "Мониторы",
         (false, "AudioDevices") => "Аудиоустройства", (false, "DeviceAlias") => "Имя в RoomSwitcher",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "Footer") => "RoomSwitcher 0.8.0 · sol669 ·",
+        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "FooterVersion") => "RoomSwitcher 0.8.1",
         _ => key
     };
 
@@ -148,16 +148,20 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         menu.Children.Add(NavButton(T("Scenarios"), "scenarios"));
         Grid.SetColumn(menu, 0); main.Children.Add(menu); Grid.SetColumn(_pageHost, 1); main.Children.Add(_pageHost);
         Grid.SetRow(main, 0);
-        var footer = new Grid { Margin = new Thickness(244, 10, 36, 18), ColumnSpacing = 10, Padding = new Thickness(0, 2, 0, 0) };
+        var footer = new Grid { Margin = new Thickness(20, 10, 36, 18), ColumnSpacing = 10, Padding = new Thickness(0, 2, 0, 0) };
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var footerInfo = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center, Opacity = .68 };
-        footerInfo.Children.Add(new TextBlock { Text = T("Footer"), VerticalAlignment = VerticalAlignment.Center });
-        footerInfo.Children.Add(new HyperlinkButton { Content = "GitHub", NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray"), Padding = new Thickness(0) });
+        var footerInfo = new StackPanel { Spacing = 0, VerticalAlignment = VerticalAlignment.Center, Opacity = .68, Margin = new Thickness(8, 0, 0, 0) };
+        footerInfo.Children.Add(new TextBlock { Text = T("FooterVersion"), VerticalAlignment = VerticalAlignment.Center });
+        var sourceLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        sourceLine.Children.Add(new TextBlock { Text = "sol669 ·", VerticalAlignment = VerticalAlignment.Center });
+        sourceLine.Children.Add(new HyperlinkButton { Content = "GitHub", NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray"), Padding = new Thickness(0) });
+        footerInfo.Children.Add(sourceLine);
         var footerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        var close = new Button { Content = T("Close"), MinWidth = 110 }; ApplyControlStyle(close, "RoomDefaultButtonStyle"); close.Click += (_, _) => Close();
+        var close = new Button { Content = T("Close"), MinWidth = 110 }; ApplyControlStyle(close, "RoomDefaultButtonStyle"); close.Click += async (_, _) => await RequestCloseAsync();
         _saveButton = new Button { Content = T("Save"), MinWidth = 110 }; ApplyControlStyle(_saveButton, "RoomAccentButtonStyle"); _saveButton.Click += (_, _) => SaveGeneral();
-        footerButtons.Children.Add(close); footerButtons.Children.Add(_saveButton); Grid.SetColumn(footerButtons, 1);
+        footerButtons.Children.Add(close); footerButtons.Children.Add(_saveButton); Grid.SetColumn(footerButtons, 2);
         footer.Children.Add(footerInfo); footer.Children.Add(footerButtons);
         Grid.SetRow(footer, 1);
         _root.Children.Clear(); _root.Children.Add(main); _root.Children.Add(footer);
@@ -414,6 +418,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             _settings.Current.SwitchScenarioHotKey = CloneHotKey(_pendingHotKey);
             _settings.Current.DeviceAliases = new Dictionary<string, string>(_pendingAliases, StringComparer.OrdinalIgnoreCase);
             _settings.Save();
+            ResetPendingGeneral();
             _tray.Refresh();
             if (rebuildShell)
             {
@@ -476,6 +481,17 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private void UpdateSaveButton()
     {
         if (_saveButton is not null) _saveButton.IsEnabled = HasUnsavedGeneralChanges();
+    }
+
+    private async Task RequestCloseAsync()
+    {
+        if (HasUnsavedGeneralChanges())
+        {
+            await ConfirmCloseAsync();
+            return;
+        }
+        _allowClose = true;
+        Close();
     }
 
     private async Task ConfirmCloseAsync()

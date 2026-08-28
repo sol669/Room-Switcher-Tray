@@ -91,6 +91,7 @@ public sealed class TrayService : IDisposable
 
     private void ShowMenu()
     {
+        NativeTheme.Apply(_window, _settings.Current.Theme);
         nint menu = TrayNative.CreatePopupMenu();
         try
         {
@@ -104,8 +105,9 @@ public sealed class TrayService : IDisposable
             }
             else if (_settings.IsConfigured)
             {
-                TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DEFAULT, SwitchCommand,
+                TrayNative.AppendMenu(menu, TrayNative.MF_STRING, SwitchCommand,
                     $"{UiText.Get(_settings.Current, "Next")}\t{FormatHotKey(_settings.Current.SwitchScenarioHotKey)}");
+                TrayNative.SetMenuDefaultItem(menu, SwitchCommand, 0);
                 foreach ((ScenarioDefinition scenario, int index) in _settings.Current.Scenarios.Select((item, index) => (item, index)))
                     TrayNative.AppendMenu(menu, TrayNative.MF_STRING |
                         (_settings.Current.ActiveScenarioId == scenario.Id ? TrayNative.MF_CHECKED : 0),
@@ -118,8 +120,9 @@ public sealed class TrayService : IDisposable
             }
             else
             {
-                TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DEFAULT,
+                TrayNative.AppendMenu(menu, TrayNative.MF_STRING,
                     SettingsCommand, UiText.Get(_settings.Current, "Configure"));
+                TrayNative.SetMenuDefaultItem(menu, SettingsCommand, 0);
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
             }
             TrayNative.AppendMenu(menu, TrayNative.MF_STRING, ExitCommand, UiText.Get(_settings.Current, "Exit"));
