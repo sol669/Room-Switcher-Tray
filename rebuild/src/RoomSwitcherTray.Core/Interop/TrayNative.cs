@@ -7,6 +7,7 @@ internal static class TrayNative
     internal const uint WM_APP = 0x8000;
     internal const uint WM_HOTKEY = 0x0312;
     internal const uint WM_WTSSESSION_CHANGE = 0x02B1;
+    internal const uint WM_LBUTTONDBLCLK = 0x0203;
     internal const uint WM_RBUTTONUP = 0x0205;
     internal const uint TPM_RIGHTBUTTON = 0x0002;
     internal const uint TPM_RETURNCMD = 0x0100;

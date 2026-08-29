@@ -44,6 +44,11 @@ public sealed class SettingsStore
         Current.Scenario1 = null;
         Current.Scenario2 = null;
         Current.ActiveScenario = 0;
+        foreach (ScenarioDefinition scenario in Current.Scenarios)
+        {
+            scenario.IconLetters = ScenarioDefinition.MakeIconLetters(
+                string.IsNullOrWhiteSpace(scenario.IconLetters) ? scenario.Name : scenario.IconLetters);
+        }
         if (Current.ActiveScenarioId.HasValue &&
             Current.Scenarios.All(scenario => scenario.Id != Current.ActiveScenarioId.Value))
             Current.ActiveScenarioId = null;

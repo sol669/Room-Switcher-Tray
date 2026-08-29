@@ -12,6 +12,7 @@ public sealed class ScenarioDefinition
     // Null means "do not change". Zero means mute; positive values are percentages.
     public int? VolumePercent { get; set; }
     public ScenarioIcon Icon { get; set; }
+    public string IconLetters { get; set; } = string.Empty;
 
     [JsonIgnore]
     public bool IsComplete =>
@@ -29,8 +30,19 @@ public sealed class ScenarioDefinition
         AudioDeviceId = AudioDeviceId,
         AudioDeviceContainerId = AudioDeviceContainerId,
         VolumePercent = VolumePercent,
-        Icon = Icon
+        Icon = Icon,
+        IconLetters = IconLetters
     };
+
+    public static string MakeIconLetters(string? value)
+    {
+        string letters = new((value ?? string.Empty)
+            .Where(char.IsLetter)
+            .Take(2)
+            .Select(char.ToUpperInvariant)
+            .ToArray());
+        return letters;
+    }
 }
 
 public enum StartupScenarioMode
@@ -42,7 +54,8 @@ public enum StartupScenarioMode
 
 public enum AppThemeMode { System, Light, Dark }
 public enum AppLanguage { Russian, English }
-public enum ScenarioIcon { Automatic, Desktop, Television, Sofa, Gamepad }
+// Letters deliberately keeps the old Automatic ordinal so existing settings migrate cleanly.
+public enum ScenarioIcon { Letters, Desktop, Television, Sofa, Gamepad }
 
 public sealed class AppSettings
 {

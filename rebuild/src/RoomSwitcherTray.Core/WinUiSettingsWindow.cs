@@ -1,12 +1,11 @@
+using Microsoft.UI;
+using Microsoft.UI.Text;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Text;
-using Microsoft.UI;
-using Microsoft.UI.Windowing;
 using RoomSwitcherTray.Core.Services;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.System;
@@ -15,7 +14,7 @@ using Windows.UI.ViewManagement;
 
 namespace RoomSwitcherTray.Core;
 
-/// <summary>The WinUI settings shell. Services and settings storage stay independent from this view.</summary>
+/// <summary>Fixed WinUI settings shell shared by general, device and scenario pages.</summary>
 public sealed class WinUiSettingsWindow : Window, IDisposable
 {
     private readonly SettingsStore _settings;
@@ -26,71 +25,83 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private readonly Grid _root = new();
     private readonly ContentControl _pageHost = new();
     private readonly Dictionary<string, Button> _navButtons = [];
-    private ListView? _scenarioList;
-    private TextBox? _scenarioName;
-    private ComboBox[] _monitorBoxes = new ComboBox[4];
-    private ComboBox? _audioBox, _volumeBox, _iconBox, _startupChoiceBox, _themeBox, _languageBox;
-    private ToggleSwitch? _autostartToggle;
-    private TextBlock? _hotKeyHint, _hotKeyTitle, _autostartState;
-    private Button? _hotKeyCaptureButton;
+    private readonly Dictionary<string, string> _pendingAliases = new(StringComparer.OrdinalIgnoreCase);
+    private StackPanel? _scenarioNavPanel;
+    private Button? _newScenarioButton;
     private Button? _saveButton;
-    private ScenarioDefinition? _selectedScenario;
+    private Button? _deleteButton;
+    private TextBlock? _hotKeyTitle;
+    private TextBlock? _hotKeyHint;
+    private Button? _hotKeyCaptureButton;
+    private TextBlock? _autostartState;
+    private ToggleSwitch? _autostartToggle;
+    private ComboBox? _startupChoiceBox;
+    private ScenarioDefinition? _draft;
+    private ScenarioDefinition? _scenarioBaseline;
+    private string[] _draftMonitorSlots = new string[4];
     private string _currentPage = "general";
-    private bool _loading, _capturingHotKey, _allowClose, _closePromptOpen;
+    private bool _draftIsNew;
+    private bool _loading;
+    private bool _devicesLoaded;
+    private bool _capturingHotKey;
+    private bool _allowClose;
+    private bool _dialogOpen;
     private bool _pendingStartWithWindows;
     private StartupScenarioMode _pendingStartupMode;
     private Guid? _pendingStartupScenarioId;
     private AppThemeMode _pendingTheme;
     private AppLanguage _pendingLanguage;
     private HotKeyDefinition _pendingHotKey = HotKeyDefinition.Default;
-    private readonly Dictionary<string, string> _pendingAliases = new(StringComparer.OrdinalIgnoreCase);
 
     public event EventHandler? ClosedByUser;
 
-    public WinUiSettingsWindow(SettingsStore settings, TrayService tray)
+    public WinUiSettingsWindow(SettingsStore settings, TrayService tray, bool openNewScenario = false)
     {
         _settings = settings;
         _tray = tray;
         _scenarios = settings.Current.Scenarios.Select(item => item.Clone()).ToList();
         ResetPendingGeneral();
+        ResetPendingAliases();
         _root.IsTabStop = true;
         _pageHost.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         _pageHost.VerticalContentAlignment = VerticalAlignment.Stretch;
         Title = "RoomSwitcher";
         try { SystemBackdrop = new MicaBackdrop(); } catch { }
-        // AppWindow uses physical pixels.  A wider fixed size leaves room for the
-        // RoomSwitcher navigation pane and the Shutdown-style horizontal rows,
-        // including on Windows installations with high display scaling.
+
         AppWindow appWindow = ConfigureWindow();
         appWindow.Closing += (sender, args) =>
         {
-            if (_allowClose || !HasUnsavedGeneralChanges()) return;
+            if (_allowClose || !HasCurrentChanges()) return;
             args.Cancel = true;
             _ = ConfirmCloseAsync();
         };
         Closed += (_, _) => ClosedByUser?.Invoke(this, EventArgs.Empty);
-        BuildShell("general");
-        _ = LoadDevicesAsync();
+
+        BuildShell();
+        _ = LoadDevicesAsync(openNewScenario);
     }
 
     public void Dispose() => Close();
 
-    // Mirrors Shutdown's sizing model: logical dimensions are converted to the
-    // DPI of the monitor where the settings window is opened.
+    public void OpenNewScenarioDraft()
+    {
+        Activate();
+        _ = OpenNewScenarioDraftAsync();
+    }
+
     private AppWindow ConfigureWindow()
     {
         nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        WindowId id = Win32Interop.GetWindowIdFromWindow(hwnd);
-        AppWindow window = AppWindow.GetFromWindowId(id);
+        AppWindow window = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(hwnd));
         NativeTheme.Apply(hwnd, _settings.Current.Theme);
-        const int logicalWidth = 980;  // Shutdown 1.1.2 width (760) plus RoomSwitcher's navigation pane.
-        const int logicalHeight = 900;
+        const int logicalWidth = 900;
+        const int logicalHeight = 820;
         double scale = Math.Max(1, GetDpiForWindow(hwnd) / 96.0);
         GetCursorPos(out NativePoint cursor);
-        DisplayArea area = DisplayArea.GetFromPoint(new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Primary);
-        RectInt32 work = area.WorkArea;
-        int width = Math.Min((int)Math.Round(logicalWidth * scale), Math.Max(840, work.Width - 48));
-        int height = Math.Min((int)Math.Round(logicalHeight * scale), Math.Max(650, work.Height - 48));
+        RectInt32 work = DisplayArea.GetFromPoint(
+            new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Primary).WorkArea;
+        int width = Math.Min((int)Math.Round(logicalWidth * scale), Math.Max(780, work.Width - 48));
+        int height = Math.Min((int)Math.Round(logicalHeight * scale), Math.Max(640, work.Height - 48));
         window.MoveAndResize(new RectInt32(
             work.X + Math.Max(0, (work.Width - width) / 2),
             work.Y + Math.Max(0, (work.Height - height) / 2), width, height));
@@ -107,74 +118,160 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X; public int Y; }
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")] private static extern short GetKeyState(int key);
 
     private bool English => _settings.Current.Language == AppLanguage.English;
+
     private string T(string key) => (English, key) switch
     {
-        (true, "General") => "General", (true, "Scenarios") => "Scenarios", (true, "Devices") => "Devices",
-        (true, "Theme") => "Theme", (true, "Language") => "Language", (true, "Behavior") => "Behavior", (true, "System") => "System",
-        (true, "Autostart") => "Autostart", (true, "StartupScenario") => "Scenario at startup",
-        (true, "Hotkey") => "Hotkey", (true, "Change") => "Change…", (true, "Save") => "Save", (true, "Close") => "Close",
-        (true, "LastLoaded") => "Last loaded",
-        (true, "Create") => "New scenario", (true, "Delete") => "Delete scenario", (true, "Name") => "Name",
-        (true, "Icon") => "Icon", (true, "Monitor") => "Monitor", (true, "Audio") => "Audio device",
-        (true, "Volume") => "Volume", (true, "Refresh") => "Refresh devices", (true, "Apply") => "Apply",
-        (true, "OpenDisplay") => "Save and open Display settings", (true, "Monitors") => "Monitors",
-        (true, "AudioDevices") => "Audio devices", (true, "DeviceAlias") => "Name in RoomSwitcher",
-        (true, "NoChange") => "Don't change", (true, "None") => "None", (true, "Settings") => "Settings", (true, "FooterVersion") => "RoomSwitcher 0.8.3",
-        (false, "General") => "Основные", (false, "Scenarios") => "Сценарии", (false, "Devices") => "Устройства",
-        (false, "Theme") => "Тема", (false, "Language") => "Язык", (false, "Behavior") => "Поведение", (false, "System") => "Система",
-        (false, "Autostart") => "Автозапуск", (false, "StartupScenario") => "Сценарий при запуске",
-        (false, "Hotkey") => "Горячая клавиша", (false, "Change") => "Изменить…", (false, "Save") => "Сохранить", (false, "Close") => "Закрыть",
-        (false, "LastLoaded") => "Последний загруженный",
-        (false, "Create") => "Новый сценарий", (false, "Delete") => "Удалить сценарий", (false, "Name") => "Название",
-        (false, "Icon") => "Иконка", (false, "Monitor") => "Монитор", (false, "Audio") => "Аудиоустройство",
-        (false, "Volume") => "Громкость", (false, "Refresh") => "Обновить устройства", (false, "Apply") => "Применить",
-        (false, "OpenDisplay") => "Сохранить и настроить экраны", (false, "Monitors") => "Мониторы",
-        (false, "AudioDevices") => "Аудиоустройства", (false, "DeviceAlias") => "Имя в RoomSwitcher",
-        (false, "NoChange") => "Не менять", (false, "None") => "Нет", (false, "Settings") => "Настройки", (false, "FooterVersion") => "RoomSwitcher 0.8.3",
+        (true, "Settings") => "SETTINGS", (true, "Scenarios") => "SCENARIOS",
+        (true, "General") => "General", (true, "Devices") => "Devices",
+        (true, "NewScenario") => "New scenario", (true, "StartupScenario") => "Scenario at startup",
+        (true, "LastLoaded") => "Last loaded", (true, "Hotkey") => "Hotkey",
+        (true, "Change") => "Change…", (true, "Autostart") => "Autostart",
+        (true, "Theme") => "Theme", (true, "Language") => "Language",
+        (true, "Monitors") => "MONITORS", (true, "AudioDevices") => "AUDIO DEVICES",
+        (true, "DeviceAlias") => "Name in RoomSwitcher", (true, "ScenarioName") => "Scenario name",
+        (true, "ScenarioDevices") => "DEVICES IN SCENARIO", (true, "Monitor") => "Monitor",
+        (true, "Audio") => "Audio device", (true, "Volume") => "Volume",
+        (true, "ScenarioIcon") => "Scenario icon", (true, "Letters") => "Letters",
+        (true, "None") => "None", (true, "NoChange") => "Don't change",
+        (true, "Desktop") => "Computer", (true, "Television") => "Television",
+        (true, "Sofa") => "Sofa", (true, "Gamepad") => "Gamepad",
+        (true, "Close") => "Close", (true, "Save") => "Save", (true, "Delete") => "Delete",
+        (true, "FooterVersion") => "RoomSwitcher 0.9.0",
+        (false, "Settings") => "НАСТРОЙКИ", (false, "Scenarios") => "СЦЕНАРИИ",
+        (false, "General") => "Основные", (false, "Devices") => "Устройства",
+        (false, "NewScenario") => "Новый сценарий", (false, "StartupScenario") => "Сценарий при запуске",
+        (false, "LastLoaded") => "Последний загруженный", (false, "Hotkey") => "Горячая клавиша",
+        (false, "Change") => "Изменить…", (false, "Autostart") => "Автозапуск",
+        (false, "Theme") => "Тема", (false, "Language") => "Язык",
+        (false, "Monitors") => "МОНИТОРЫ", (false, "AudioDevices") => "АУДИОУСТРОЙСТВА",
+        (false, "DeviceAlias") => "Имя в RoomSwitcher", (false, "ScenarioName") => "Название сценария",
+        (false, "ScenarioDevices") => "УСТРОЙСТВА В СЦЕНАРИИ", (false, "Monitor") => "Монитор",
+        (false, "Audio") => "Аудиоустройство", (false, "Volume") => "Громкость",
+        (false, "ScenarioIcon") => "Иконка сценария", (false, "Letters") => "Литеры",
+        (false, "None") => "Нет", (false, "NoChange") => "Не менять",
+        (false, "Desktop") => "Компьютер", (false, "Television") => "Телевизор",
+        (false, "Sofa") => "Диван", (false, "Gamepad") => "Геймпад",
+        (false, "Close") => "Закрыть", (false, "Save") => "Сохранить", (false, "Delete") => "Удалить",
+        (false, "FooterVersion") => "RoomSwitcher 0.9.0",
         _ => key
     };
 
-    private void BuildShell(string page)
+    private void BuildShell()
     {
-        _currentPage = page;
         _navButtons.Clear();
-        _root.RowDefinitions.Clear(); _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var main = new Grid(); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) }); main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var menu = new StackPanel { Spacing = 5, Margin = new Thickness(20, 15, 16, 12) };
-        menu.Children.Add(new TextBlock { Text = T("Settings"), FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 0, 36) });
-        menu.Children.Add(NavButton(T("General"), "general"));
-        menu.Children.Add(NavButton(T("Scenarios"), "scenarios"));
-        Grid.SetColumn(menu, 0); main.Children.Add(menu); Grid.SetColumn(_pageHost, 1); main.Children.Add(_pageHost);
+        _root.RowDefinitions.Clear();
+        _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var main = new Grid();
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        main.Children.Add(BuildNavigation());
+        Grid.SetColumn(_pageHost, 1);
+        main.Children.Add(_pageHost);
         Grid.SetRow(main, 0);
-        var footer = new Grid { Margin = new Thickness(20, 10, 36, 18), ColumnSpacing = 10, Padding = new Thickness(0, 2, 0, 0) };
+
+        var footer = new Grid { Margin = new Thickness(20, 10, 28, 18) };
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var footerInfo = new StackPanel { Spacing = 0, VerticalAlignment = VerticalAlignment.Center, Opacity = .68, Margin = new Thickness(8, 0, 0, 0) };
-        footerInfo.Children.Add(new TextBlock { Text = T("FooterVersion"), VerticalAlignment = VerticalAlignment.Center });
+
+        var footerInfo = new StackPanel { Spacing = 0, Opacity = .68, Margin = new Thickness(8, 0, 0, 0) };
+        footerInfo.Children.Add(new TextBlock { Text = T("FooterVersion") });
         var sourceLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         sourceLine.Children.Add(new TextBlock { Text = "sol669 ·", VerticalAlignment = VerticalAlignment.Center });
-        sourceLine.Children.Add(new HyperlinkButton { Content = "GitHub", NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray"), Padding = new Thickness(0) });
+        sourceLine.Children.Add(new HyperlinkButton
+        {
+            Content = "GitHub",
+            NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray"),
+            Padding = new Thickness(0)
+        });
         footerInfo.Children.Add(sourceLine);
-        var footerButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        var close = new Button { Content = T("Close"), MinWidth = 110 }; ApplyControlStyle(close, "RoomDefaultButtonStyle"); close.Click += async (_, _) => await RequestCloseAsync();
-        _saveButton = new Button { Content = T("Save"), MinWidth = 110 }; ApplyControlStyle(_saveButton, "RoomAccentButtonStyle"); _saveButton.Click += (_, _) => SaveGeneral();
-        footerButtons.Children.Add(close); footerButtons.Children.Add(_saveButton); Grid.SetColumn(footerButtons, 2);
-        footer.Children.Add(footerInfo); footer.Children.Add(footerButtons);
+        footer.Children.Add(footerInfo);
+
+        _deleteButton = StyledButton(T("Delete"), "RoomDefaultButtonStyle", 110);
+        _deleteButton.HorizontalAlignment = HorizontalAlignment.Left;
+        _deleteButton.Margin = new Thickness(24, 0, 0, 0);
+        _deleteButton.Click += async (_, _) => await DeleteScenarioAsync();
+        Grid.SetColumn(_deleteButton, 1);
+        footer.Children.Add(_deleteButton);
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        Button close = StyledButton(T("Close"), "RoomDefaultButtonStyle", 110);
+        close.Click += async (_, _) => await RequestCloseAsync();
+        _saveButton = StyledButton(T("Save"), "RoomAccentButtonStyle", 110);
+        _saveButton.Click += async (_, _) => await SaveCurrentPageAsync();
+        actions.Children.Add(close);
+        actions.Children.Add(_saveButton);
+        Grid.SetColumn(actions, 2);
+        footer.Children.Add(actions);
         Grid.SetRow(footer, 1);
-        _root.Children.Clear(); _root.Children.Add(main); _root.Children.Add(footer);
-        _root.KeyDown -= RootKeyDown; _root.KeyDown += RootKeyDown;
+
+        _root.Children.Clear();
+        _root.Children.Add(main);
+        _root.Children.Add(footer);
+        _root.KeyDown -= RootKeyDown;
+        _root.KeyDown += RootKeyDown;
         Content = _root;
-        ShowPage(page);
+        ShowCurrentPage();
         ApplyTheme();
-        UpdateSaveButton();
+        UpdateFooterState();
     }
+
+    private UIElement BuildNavigation()
+    {
+        var navigation = new Grid { Margin = new Thickness(20, 15, 16, 12) };
+        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        navigation.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var settingsGroup = new StackPanel { Spacing = 5 };
+        settingsGroup.Children.Add(NavSection(T("Settings")));
+        settingsGroup.Children.Add(NavButton(T("General"), "general"));
+        settingsGroup.Children.Add(NavButton(T("Devices"), "devices"));
+        Grid.SetRow(settingsGroup, 1);
+        navigation.Children.Add(settingsGroup);
+
+        TextBlock scenarioHeader = NavSection(T("Scenarios"));
+        scenarioHeader.Margin = new Thickness(8, 22, 0, 6);
+        Grid.SetRow(scenarioHeader, 3);
+        navigation.Children.Add(scenarioHeader);
+
+        _scenarioNavPanel = new StackPanel { Spacing = 5 };
+        var scenarioScroll = new ScrollViewer
+        {
+            Content = _scenarioNavPanel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+        };
+        Grid.SetRow(scenarioScroll, 4);
+        navigation.Children.Add(scenarioScroll);
+
+        _newScenarioButton = NavButton("+ " + T("NewScenario"), "new");
+        _newScenarioButton.Margin = new Thickness(0, 5, 0, 0);
+        Grid.SetRow(_newScenarioButton, 5);
+        navigation.Children.Add(_newScenarioButton);
+        RebuildScenarioNavigation();
+        return navigation;
+    }
+
+    private static TextBlock NavSection(string text) => new()
+    {
+        Text = text,
+        FontSize = 11,
+        FontWeight = FontWeights.SemiBold,
+        Opacity = .68,
+        Margin = new Thickness(8, 0, 0, 6)
+    };
 
     private Button NavButton(string text, string page)
     {
-        bool selected = page == _currentPage;
         var button = new Button
         {
             Content = text,
@@ -183,47 +280,74 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            Background = selected ? AccentBrush() : ThemeBrush("SubtleFillColorTransparentBrush", Colors.Transparent),
-            Foreground = selected ? AccentTextBrush() : ThemeBrush("TextFillColorPrimaryBrush", IsDark() ? Colors.White : Colors.Black)
+            HorizontalContentAlignment = HorizontalAlignment.Left
         };
         _navButtons[page] = button;
-        button.Click += (_, _) => NavigateTo(page);
+        button.Click += async (_, _) => await RequestNavigateAsync(page);
         return button;
     }
-    private void NavigateTo(string page)
+
+    private void RebuildScenarioNavigation()
+    {
+        if (_scenarioNavPanel is null) return;
+        foreach (string key in _navButtons.Keys.Where(key => key.StartsWith("scenario:", StringComparison.Ordinal)).ToList())
+            _navButtons.Remove(key);
+        _scenarioNavPanel.Children.Clear();
+        foreach (ScenarioDefinition scenario in _scenarios)
+        {
+            string page = ScenarioPage(scenario.Id);
+            _scenarioNavPanel.Children.Add(NavButton(scenario.Name, page));
+        }
+        RefreshNavigationSelection();
+    }
+
+    private async Task RequestNavigateAsync(string page)
     {
         if (page == _currentPage) return;
+        if (!await ConfirmLeaveCurrentPageAsync()) return;
+        NavigateCore(page);
+    }
+
+    private void NavigateCore(string page)
+    {
         _currentPage = page;
+        _capturingHotKey = false;
+        if (page == "general") ResetPendingGeneral();
+        else if (page == "devices") ResetPendingAliases();
+        else if (page == "new") CreateNewDraft();
+        else if (TryScenarioId(page, out Guid id)) LoadScenarioDraft(id);
+        ShowCurrentPage();
         RefreshNavigationSelection();
-        _pageHost.Content = page switch { "scenarios" => BuildScenariosPage(), _ => BuildGeneralPage() };
-        // Button pointer/focus visual states settle after Click. Re-apply the
-        // selected page once more afterwards so a stale accent fill cannot win.
+        UpdateFooterState();
         _root.DispatcherQueue.TryEnqueue(RefreshNavigationSelection);
     }
+
+    private void ShowCurrentPage()
+    {
+        _pageHost.Content = _currentPage switch
+        {
+            "devices" => BuildDevicesPage(),
+            "new" => BuildScenarioPage(),
+            _ when _currentPage.StartsWith("scenario:", StringComparison.Ordinal) => BuildScenarioPage(),
+            _ => BuildGeneralPage()
+        };
+    }
+
     private void RefreshNavigationSelection()
     {
         foreach ((string page, Button button) in _navButtons)
         {
             bool selected = page == _currentPage;
             button.Background = selected ? AccentBrush() : new SolidColorBrush(Colors.Transparent);
-            button.Foreground = selected ? AccentTextBrush() : ThemeBrush("TextFillColorPrimaryBrush", IsDark() ? Colors.White : Colors.Black);
+            button.Foreground = selected ? AccentTextBrush() :
+                ThemeBrush("TextFillColorPrimaryBrush", IsDark() ? Colors.White : Colors.Black);
         }
     }
-    private void ShowPage(string page)
-    {
-        _currentPage = page;
-        _pageHost.Content = page switch { "scenarios" => BuildScenariosPage(), _ => BuildGeneralPage() };
-    }
-    private static StackPanel Panel() => new() { MaxWidth = 820, HorizontalAlignment = HorizontalAlignment.Stretch, Spacing = 5, Margin = new Thickness(24, 20, 36, 12) };
-    private static TextBlock Heading(string text) => new() { Text = text, FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) };
-    private static TextBlock Label(string text) => new() { Text = text, Opacity = .72 };
 
     private UIElement BuildGeneralPage()
     {
         _loading = true;
-        var panel = Panel();
-        panel.Children.Add(Section(T("Behavior"), first: true));
+        StackPanel panel = PagePanel();
         _startupChoiceBox = SettingsComboBox(new ComboBox { DisplayMemberPath = "Name" });
         var startupChoices = new List<StartupChoice> { new(null, T("LastLoaded")) };
         startupChoices.AddRange(_scenarios.Where(s => s.IsComplete).Select(s => new StartupChoice(s.Id, s.Name)));
@@ -235,71 +359,207 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             if (_loading || _startupChoiceBox.SelectedItem is not StartupChoice choice) return;
             _pendingStartupMode = choice.Id is null ? StartupScenarioMode.RestoreLastScenario : StartupScenarioMode.AlwaysUseScenario;
             _pendingStartupScenarioId = choice.Id;
-            UpdateSaveButton();
+            UpdateFooterState();
         };
         panel.Children.Add(SettingRow(T("StartupScenario"), _startupChoiceBox));
-        var hotkeyLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, HorizontalAlignment = HorizontalAlignment.Right };
-        _hotKeyCaptureButton = SettingsButton(new Button { Content = T("Change"), MinWidth = 110 }); _hotKeyCaptureButton.Click += (_, _) => BeginCapture(_hotKeyCaptureButton); hotkeyLine.Children.Add(_hotKeyCaptureButton);
-        _hotKeyTitle = new TextBlock { Text = $"{T("Hotkey")} — {TrayService.FormatHotKey(_pendingHotKey)}", VerticalAlignment = VerticalAlignment.Center };
-        panel.Children.Add(SettingRow(_hotKeyTitle, hotkeyLine));
-        _hotKeyHint = new TextBlock { Opacity = .68, Margin = new Thickness(16, 0, 0, 0) }; panel.Children.Add(_hotKeyHint);
-        panel.Children.Add(Section(T("System")));
-        _autostartToggle = new ToggleSwitch { IsOn = _pendingStartWithWindows, MinWidth = 0, Width = 44, HorizontalAlignment = HorizontalAlignment.Right, OffContent = string.Empty, OnContent = string.Empty };
-        _autostartState = new TextBlock { MinWidth = 72, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Opacity = .72 };
-        _autostartToggle.Toggled += (_, _) => { UpdateAutostartState(); if (!_loading) { _pendingStartWithWindows = _autostartToggle.IsOn; UpdateSaveButton(); } };
+
+        _hotKeyCaptureButton = SettingsButton(new Button { Content = T("Change"), MinWidth = 110 });
+        _hotKeyCaptureButton.Click += (_, _) => BeginCapture();
+        _hotKeyTitle = new TextBlock
+        {
+            Text = $"{T("Hotkey")} — {TrayService.FormatHotKey(_pendingHotKey)}",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        panel.Children.Add(SettingRow(_hotKeyTitle, _hotKeyCaptureButton));
+        _hotKeyHint = new TextBlock { Opacity = .68, Margin = new Thickness(14, 0, 0, 0), Visibility = Visibility.Collapsed };
+        panel.Children.Add(_hotKeyHint);
+
+        _autostartToggle = new ToggleSwitch
+        {
+            IsOn = _pendingStartWithWindows,
+            MinWidth = 0,
+            Width = 44,
+            OffContent = string.Empty,
+            OnContent = string.Empty
+        };
+        _autostartState = new TextBlock { MinWidth = 58, TextAlignment = TextAlignment.Right, Opacity = .72 };
+        _autostartToggle.Toggled += (_, _) =>
+        {
+            UpdateAutostartState();
+            if (_loading) return;
+            _pendingStartWithWindows = _autostartToggle.IsOn;
+            UpdateFooterState();
+        };
         UpdateAutostartState();
         panel.Children.Add(ToggleSettingRow(T("Autostart"), _autostartState, _autostartToggle));
-        _themeBox = SettingsComboBox(new ComboBox { ItemsSource = English ? new[] { "Like Windows", "Light", "Dark" } : new[] { "Как в Windows", "Светлая", "Тёмная" }, SelectedIndex = (int)_pendingTheme });
-        _themeBox.SelectionChanged += (_, _) => { if (!_loading && _themeBox.SelectedIndex >= 0) { _pendingTheme = (AppThemeMode)_themeBox.SelectedIndex; UpdateSaveButton(); } };
-        panel.Children.Add(SettingRow(T("Theme"), _themeBox));
-        _languageBox = SettingsComboBox(new ComboBox { ItemsSource = new[] { "Русский", "English" }, SelectedIndex = (int)_pendingLanguage });
-        _languageBox.SelectionChanged += (_, _) => { if (!_loading && _languageBox.SelectedIndex >= 0) { _pendingLanguage = (AppLanguage)_languageBox.SelectedIndex; UpdateSaveButton(); } };
-        panel.Children.Add(SettingRow(T("Language"), _languageBox));
-        panel.Children.Add(Section(T("Devices")));
+
+        ComboBox theme = SettingsComboBox(new ComboBox
+        {
+            ItemsSource = English ? new[] { "Like Windows", "Light", "Dark" } : new[] { "Как в Windows", "Светлая", "Тёмная" },
+            SelectedIndex = (int)_pendingTheme
+        });
+        theme.SelectionChanged += (_, _) =>
+        {
+            if (!_loading && theme.SelectedIndex >= 0) { _pendingTheme = (AppThemeMode)theme.SelectedIndex; UpdateFooterState(); }
+        };
+        panel.Children.Add(SettingRow(T("Theme"), theme));
+
+        ComboBox language = SettingsComboBox(new ComboBox
+        {
+            ItemsSource = new[] { "Русский", "English" },
+            SelectedIndex = (int)_pendingLanguage
+        });
+        language.SelectionChanged += (_, _) =>
+        {
+            if (!_loading && language.SelectedIndex >= 0) { _pendingLanguage = (AppLanguage)language.SelectedIndex; UpdateFooterState(); }
+        };
+        panel.Children.Add(SettingRow(T("Language"), language));
+        FinishInitialLoading(panel);
+        return PageScroll(panel);
+    }
+
+    private UIElement BuildDevicesPage()
+    {
+        _loading = true;
+        StackPanel panel = PagePanel();
         AddDeviceAliasRows(panel, T("Monitors"), _displays.Select(display => (display.Id, display.Name)));
         AddDeviceAliasRows(panel, T("AudioDevices"), _audio.Select(audio => (audio.Id, audio.DisplayName ?? audio.Name)));
-        var scroll = new ScrollViewer
+        FinishInitialLoading(panel);
+        return PageScroll(panel);
+    }
+
+    private UIElement BuildScenarioPage()
+    {
+        _loading = true;
+        StackPanel panel = PagePanel();
+        if (_draft is null)
         {
-            Content = panel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch
-        };
-        scroll.Loaded += (_, _) =>
+            FinishInitialLoading(panel);
+            return PageScroll(panel);
+        }
+
+        TextBox name = SettingsTextBox(new TextBox { Text = _draft.Name, MaxLength = 80 });
+        name.TextChanged += (_, _) =>
         {
-            // Controls can raise their initial change notifications only after
-            // their templates are attached. Those are not user edits.
-            _loading = false;
-            UpdateSaveButton();
+            if (_loading || _draft is null) return;
+            _draft.Name = name.Text;
+            UpdateFooterState();
         };
-        return scroll;
+        panel.Children.Add(SettingRow(T("ScenarioName"), name));
+        panel.Children.Add(Section(T("ScenarioDevices"), first: false));
+
+        for (int index = 0; index < 4; index++)
+        {
+            int slot = index;
+            ComboBox monitor = SettingsComboBox(new ComboBox { DisplayMemberPath = "Name", SelectedValuePath = "Id" });
+            monitor.Tag = slot;
+            BindMonitorBox(monitor, slot);
+            monitor.SelectionChanged += (_, _) =>
+            {
+                if (_loading) return;
+                _draftMonitorSlots[slot] = monitor.SelectedValue as string ?? string.Empty;
+                CaptureMonitorSlots();
+                RefreshScenarioPagePreservingFocus();
+            };
+            panel.Children.Add(SettingRow($"{T("Monitor")} {index + 1}", monitor));
+        }
+
+        ComboBox audio = SettingsComboBox(new ComboBox { DisplayMemberPath = "Name", SelectedValuePath = "Id" });
+        var audioChoices = new List<Choice> { new(string.Empty, T("None")) };
+        audioChoices.AddRange(_audio.Select(device => new Choice(device.Id,
+            DeviceAliasService.NameFor(PendingAliasSettings(), device.Id, device.DisplayName ?? device.Name))));
+        audio.ItemsSource = audioChoices;
+        audio.SelectedValue = _draft.AudioDeviceId;
+        audio.SelectionChanged += (_, _) =>
+        {
+            if (_loading || _draft is null) return;
+            _draft.AudioDeviceId = audio.SelectedValue as string ?? string.Empty;
+            _draft.AudioDeviceContainerId = _audio.FirstOrDefault(item => item.Id == _draft.AudioDeviceId)
+                ?.ContainerId?.ToString("D") ?? string.Empty;
+            UpdateFooterState();
+        };
+        panel.Children.Add(SettingRow(T("Audio"), audio));
+
+        ComboBox volume = SettingsComboBox(new ComboBox
+        {
+            ItemsSource = VolumeChoices(),
+            DisplayMemberPath = "Name",
+            SelectedValuePath = "Value",
+            SelectedValue = _draft.VolumePercent
+        });
+        volume.SelectionChanged += (_, _) =>
+        {
+            if (!_loading && _draft is not null) { _draft.VolumePercent = volume.SelectedValue as int?; UpdateFooterState(); }
+        };
+        panel.Children.Add(SettingRow(T("Volume"), volume));
+
+        ComboBox icon = SettingsComboBox(new ComboBox
+        {
+            ItemsSource = IconChoices(),
+            DisplayMemberPath = "Name",
+            SelectedValuePath = "Value",
+            SelectedValue = _draft.Icon
+        });
+        icon.SelectionChanged += (_, _) =>
+        {
+            if (_loading || _draft is null || icon.SelectedValue is not ScenarioIcon selected) return;
+            _draft.Icon = selected;
+            ShowCurrentPage();
+            UpdateFooterState();
+        };
+        panel.Children.Add(SettingRow(T("ScenarioIcon"), icon));
+
+        if (_draft.Icon == ScenarioIcon.Letters)
+        {
+            TextBox letters = SettingsTextBox(new TextBox { Text = _draft.IconLetters, MaxLength = 2 });
+            letters.TextChanged += (_, _) =>
+            {
+                if (_loading || _draft is null) return;
+                string normalized = ScenarioDefinition.MakeIconLetters(letters.Text);
+                if (!string.Equals(letters.Text, normalized, StringComparison.Ordinal))
+                {
+                    int position = normalized.Length;
+                    letters.Text = normalized;
+                    letters.SelectionStart = position;
+                }
+                _draft.IconLetters = normalized;
+                UpdateFooterState();
+            };
+            panel.Children.Add(SettingRow(T("Letters"), letters));
+        }
+
+        FinishInitialLoading(panel);
+        return PageScroll(panel);
     }
 
-    private static TextBlock Section(string text, bool first = false) => new() { Text = text.ToUpperInvariant(), FontSize = 12, FontWeight = FontWeights.SemiBold, Opacity = .68, Margin = new Thickness(2, first ? 0 : 13, 0, 1) };
-
-    private ComboBox SettingsComboBox(ComboBox comboBox)
+    private void BindMonitorBox(ComboBox box, int slot)
     {
-        comboBox.Width = 280;
-        comboBox.HorizontalAlignment = HorizontalAlignment.Stretch;
-        comboBox.VerticalAlignment = VerticalAlignment.Center;
-        ApplyControlStyle(comboBox, "RoomSettingsComboBoxStyle");
-        return comboBox;
+        string own = _draftMonitorSlots[slot] ?? string.Empty;
+        HashSet<string> used = _draftMonitorSlots
+            .Where((id, index) => index != slot && !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var choices = new List<Choice> { new(string.Empty, T("None")) };
+        choices.AddRange(_displays
+            .Where(device => device.Id.Equals(own, StringComparison.OrdinalIgnoreCase) || !used.Contains(device.Id))
+            .Select(device => new Choice(device.Id,
+                DeviceAliasService.NameFor(PendingAliasSettings(), device.Id, device.Name))));
+        box.ItemsSource = choices;
+        box.SelectedValue = own;
     }
 
-    private Button SettingsButton(Button button)
+    private void CaptureMonitorSlots()
     {
-        ApplyControlStyle(button, "RoomHotkeyButtonStyle");
-        button.VerticalAlignment = VerticalAlignment.Center;
-        return button;
+        if (_draft is null) return;
+        _draft.DisplayIds = _draftMonitorSlots
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
-    private TextBox SettingsTextBox(TextBox textBox)
+    private void RefreshScenarioPagePreservingFocus()
     {
-        textBox.Width = 280;
-        textBox.HorizontalAlignment = HorizontalAlignment.Stretch;
-        textBox.VerticalAlignment = VerticalAlignment.Center;
-        ApplyControlStyle(textBox, "RoomDeviceAliasTextBoxStyle");
-        return textBox;
+        ShowCurrentPage();
+        UpdateFooterState();
     }
 
     private void AddDeviceAliasRows(StackPanel panel, string heading, IEnumerable<(string Id, string SystemName)> devices)
@@ -310,11 +570,10 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             .Select(group => group.First())
             .ToList();
         if (items.Count == 0) return;
-
-        panel.Children.Add(Subsection(heading));
+        panel.Children.Add(Section(heading, panel.Children.Count == 0));
         foreach ((string id, string systemName) in items)
         {
-            var alias = SettingsTextBox(new TextBox
+            TextBox alias = SettingsTextBox(new TextBox
             {
                 Text = _pendingAliases.TryGetValue(id, out string? value) ? value : string.Empty,
                 PlaceholderText = T("DeviceAlias")
@@ -325,42 +584,95 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
                 string value = alias.Text.Trim();
                 if (string.IsNullOrWhiteSpace(value)) _pendingAliases.Remove(id);
                 else _pendingAliases[id] = value;
-                UpdateSaveButton();
+                UpdateFooterState();
             };
-            panel.Children.Add(SettingRow(new TextBlock
+            var title = new TextBlock
             {
                 Text = systemName,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
-            }, alias));
+            };
+            ToolTipService.SetToolTip(title, systemName);
+            panel.Children.Add(SettingRow(title, alias));
         }
     }
 
-    private static TextBlock Subsection(string text) => new()
+    private static StackPanel PagePanel() => new()
     {
-        Text = text,
-        FontSize = 13,
-        FontWeight = FontWeights.SemiBold,
-        Opacity = .78,
-        Margin = new Thickness(2, 3, 0, 1)
+        MaxWidth = 660,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        Spacing = 5,
+        Margin = new Thickness(24, 20, 34, 12)
     };
 
-    private static void ApplyControlStyle(FrameworkElement control, string resourceKey)
+    private static ScrollViewer PageScroll(UIElement content) => new()
     {
-        // WinUI keeps compiled XAML resources deferred. TryGetValue can return false
-        // before such a resource has been materialized; the indexer forces lookup.
-        if (Application.Current.Resources[resourceKey] is Style controlStyle)
-            control.Style = controlStyle;
+        Content = content,
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        Padding = new Thickness(0, 0, 8, 0)
+    };
+
+    private static TextBlock Section(string text, bool first) => new()
+    {
+        Text = text,
+        FontSize = 12,
+        FontWeight = FontWeights.SemiBold,
+        Opacity = .68,
+        Margin = new Thickness(2, first ? 0 : 13, 0, 1)
+    };
+
+    private void FinishInitialLoading(FrameworkElement element)
+    {
+        element.Loaded += (_, _) =>
+        {
+            _loading = false;
+            UpdateFooterState();
+        };
     }
-    private Border SettingRow(string title, FrameworkElement control)
-        => SettingRow(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center }, control);
+
+    private ComboBox SettingsComboBox(ComboBox comboBox)
+    {
+        comboBox.Width = 270;
+        comboBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+        ApplyControlStyle(comboBox, "RoomSettingsComboBoxStyle");
+        return comboBox;
+    }
+
+    private TextBox SettingsTextBox(TextBox textBox)
+    {
+        textBox.Width = 270;
+        textBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+        ApplyControlStyle(textBox, "RoomDeviceAliasTextBoxStyle");
+        return textBox;
+    }
+
+    private Button SettingsButton(Button button)
+    {
+        ApplyControlStyle(button, "RoomHotkeyButtonStyle");
+        return button;
+    }
+
+    private static Button StyledButton(string text, string style, double minWidth)
+    {
+        var button = new Button { Content = text, MinWidth = minWidth };
+        ApplyControlStyle(button, style);
+        return button;
+    }
+
+    private Border SettingRow(string title, FrameworkElement control) =>
+        SettingRow(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center }, control);
+
     private Border SettingRow(FrameworkElement title, FrameworkElement control)
     {
         var grid = new Grid { ColumnSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.Children.Add(title);
-        Grid.SetColumn(control, 1); control.VerticalAlignment = VerticalAlignment.Center; grid.Children.Add(control);
+        Grid.SetColumn(control, 1);
+        control.VerticalAlignment = VerticalAlignment.Center;
+        grid.Children.Add(control);
         return SettingsCard(grid);
     }
 
@@ -371,16 +683,23 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.Children.Add(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center });
-        Grid.SetColumn(state, 1); grid.Children.Add(state);
-        Grid.SetColumn(toggle, 2); grid.Children.Add(toggle);
+        Grid.SetColumn(state, 1);
+        Grid.SetColumn(toggle, 2);
+        grid.Children.Add(state);
+        grid.Children.Add(toggle);
         return SettingsCard(grid);
     }
 
-    private Border SettingsCard(Grid content)
+    private static Border SettingsCard(Grid content)
     {
         var card = new Border { Child = content };
         ApplyControlStyle(card, "RoomSettingsCardStyle");
         return card;
+    }
+
+    private static void ApplyControlStyle(FrameworkElement control, string resourceKey)
+    {
+        if (Application.Current.Resources[resourceKey] is Style style) control.Style = style;
     }
 
     private void UpdateAutostartState()
@@ -389,36 +708,38 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _autostartState.Text = _autostartToggle.IsOn ? (English ? "On" : "Вкл.") : (English ? "Off" : "Откл.");
     }
 
-    private void ApplyTheme()
+    private void UpdateFooterState()
     {
-        _root.RequestedTheme = _settings.Current.Theme switch { AppThemeMode.Light => ElementTheme.Light, AppThemeMode.Dark => ElementTheme.Dark, _ => ElementTheme.Default };
-        NativeTheme.Apply(WinRT.Interop.WindowNative.GetWindowHandle(this), _settings.Current.Theme);
+        if (_saveButton is not null)
+            _saveButton.IsEnabled = !_loading && CanSaveCurrentPage() && HasCurrentChanges();
+        if (_deleteButton is not null)
+            _deleteButton.Visibility = IsScenarioPage && !_draftIsNew && _scenarios.Count > 1
+                ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private bool IsDark() => _settings.Current.Theme == AppThemeMode.Dark || (_settings.Current.Theme == AppThemeMode.System && NativeTheme.IsSystemDark());
-    private SolidColorBrush ThemeBrush(string key, Color fallback)
+    private bool CanSaveCurrentPage() => !IsScenarioPage || _draft?.IsComplete == true;
+
+    private bool HasCurrentChanges() => _currentPage switch
     {
-        if (Application.Current.Resources.TryGetValue(key, out object? resource))
-        {
-            if (resource is SolidColorBrush brush) return brush;
-            if (resource is Color color) return new SolidColorBrush(color);
-        }
-        return new SolidColorBrush(fallback);
+        "general" => HasUnsavedGeneralChanges(),
+        "devices" => HasUnsavedAliasChanges(),
+        _ when IsScenarioPage => _draft is not null && (_draftIsNew || !ScenarioEquals(_draft, _scenarioBaseline)),
+        _ => false
+    };
+
+    private bool IsScenarioPage => _currentPage == "new" || _currentPage.StartsWith("scenario:", StringComparison.Ordinal);
+
+    private async Task<bool> SaveCurrentPageAsync()
+    {
+        if (!CanSaveCurrentPage()) return false;
+        if (_currentPage == "general") return SaveGeneral();
+        if (_currentPage == "devices") return SaveAliases();
+        if (IsScenarioPage) return await SaveScenarioAsync();
+        return false;
     }
-    private SolidColorBrush AccentBrush()
+
+    private bool SaveGeneral()
     {
-        Color fallback = new UISettings().GetColorValue(UIColorType.Accent);
-        return ThemeBrush("AccentFillColorDefaultBrush", fallback);
-    }
-    private SolidColorBrush AccentTextBrush()
-    {
-        Color accent = new UISettings().GetColorValue(UIColorType.Accent);
-        double luminance = .299 * accent.R + .587 * accent.G + .114 * accent.B;
-        return ThemeBrush("TextOnAccentFillColorPrimaryBrush", luminance > 165 ? Colors.Black : Colors.White);
-    }
-    private bool SaveGeneral(bool rebuildShell = true)
-    {
-        if (_saveButton is not null) _saveButton.IsEnabled = false;
         try
         {
             bool appearanceChanged = _pendingTheme != _settings.Current.Theme ||
@@ -430,36 +751,321 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             _settings.Current.Theme = _pendingTheme;
             _settings.Current.Language = _pendingLanguage;
             _settings.Current.SwitchScenarioHotKey = CloneHotKey(_pendingHotKey);
-            _settings.Current.DeviceAliases = new Dictionary<string, string>(_pendingAliases, StringComparer.OrdinalIgnoreCase);
             _settings.Save();
             ResetPendingGeneral();
             _tray.Refresh();
-            if (rebuildShell && appearanceChanged)
-            {
-                string page = _currentPage;
-                BuildShell(page);
-            }
-            else
-            {
-                ApplyTheme();
-                RefreshNavigationSelection();
-                UpdateSaveButton();
-            }
-            _root.DispatcherQueue.TryEnqueue(() =>
-            {
-                // Deferred initialization events from a rebuilt page have now
-                // finished. The saved model is the new clean baseline.
-                ResetPendingGeneral();
-                UpdateSaveButton();
-            });
+            if (appearanceChanged) BuildShell();
+            else { ApplyTheme(); RefreshNavigationSelection(); UpdateFooterState(); }
             return true;
         }
         catch (Exception ex)
         {
             SettingsStore.Log(ex);
-            UpdateSaveButton();
+            UpdateFooterState();
             return false;
         }
+    }
+
+    private bool SaveAliases()
+    {
+        try
+        {
+            _settings.Current.DeviceAliases = new Dictionary<string, string>(_pendingAliases, StringComparer.OrdinalIgnoreCase);
+            _settings.Save();
+            ResetPendingAliases();
+            _tray.Refresh();
+            UpdateFooterState();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SettingsStore.Log(ex);
+            UpdateFooterState();
+            return false;
+        }
+    }
+
+    private async Task<bool> SaveScenarioAsync()
+    {
+        if (_draft?.IsComplete != true) return false;
+        _draft.Name = _draft.Name.Trim();
+        _draft.IconLetters = ScenarioDefinition.MakeIconLetters(_draft.IconLetters);
+        bool wasActive = !_draftIsNew && _settings.Current.ActiveScenarioId == _draft.Id;
+        bool operationalChanged = wasActive && !OperationallyEqual(_draft, _scenarioBaseline);
+
+        if (_draftIsNew)
+        {
+            _scenarios.Add(_draft.Clone());
+            _draftIsNew = false;
+        }
+        else
+        {
+            int index = _scenarios.FindIndex(item => item.Id == _draft.Id);
+            if (index >= 0) _scenarios[index] = _draft.Clone();
+        }
+        _settings.Current.Scenarios = _scenarios.Select(item => item.Clone()).ToList();
+        _settings.Save();
+        _scenarioBaseline = _draft.Clone();
+        _currentPage = ScenarioPage(_draft.Id);
+        _tray.Refresh();
+        RebuildScenarioNavigation();
+        RefreshNavigationSelection();
+        UpdateFooterState();
+
+        if (operationalChanged) await PromptApplyScenarioAsync(_draft);
+        return true;
+    }
+
+    private async Task PromptApplyScenarioAsync(ScenarioDefinition scenario)
+    {
+        if (_root.XamlRoot is null) return;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = _root.XamlRoot,
+            Title = English ? $"Scenario “{scenario.Name}” saved" : $"Сценарий «{scenario.Name}» сохранён",
+            Content = English ? "Apply the updated scenario now?" : "Применить обновлённый сценарий сейчас?",
+            PrimaryButtonText = English ? "Apply now" : "Применить сейчас",
+            CloseButtonText = English ? "Later" : "Позже",
+            DefaultButton = ContentDialogButton.Primary
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            await _tray.ApplyScenarioAsync(scenario.Id);
+    }
+
+    private async Task DeleteScenarioAsync()
+    {
+        if (_draft is null || _draftIsNew || _scenarios.Count <= 1 || _root.XamlRoot is null) return;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = _root.XamlRoot,
+            Title = English ? $"Delete “{_draft.Name}”?" : $"Удалить сценарий «{_draft.Name}»?",
+            Content = English ? "This action cannot be undone." : "Это действие нельзя отменить.",
+            PrimaryButtonText = T("Delete"),
+            CloseButtonText = English ? "Cancel" : "Отмена",
+            DefaultButton = ContentDialogButton.Close
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        Guid deletedId = _draft.Id;
+        _scenarios.RemoveAll(item => item.Id == deletedId);
+        _settings.Current.Scenarios = _scenarios.Select(item => item.Clone()).ToList();
+        if (_settings.Current.ActiveScenarioId == deletedId) _settings.Current.ActiveScenarioId = null;
+        if (_settings.Current.StartupScenarioId == deletedId)
+        {
+            _settings.Current.StartupScenarioId = null;
+            _settings.Current.StartupScenarioMode = StartupScenarioMode.RestoreLastScenario;
+        }
+        _settings.Save();
+        _tray.Refresh();
+        _draft = null;
+        _scenarioBaseline = null;
+        _currentPage = "general";
+        ResetPendingGeneral();
+        RebuildScenarioNavigation();
+        ShowCurrentPage();
+        RefreshNavigationSelection();
+        UpdateFooterState();
+    }
+
+    private async Task RequestCloseAsync()
+    {
+        if (HasCurrentChanges()) { await ConfirmCloseAsync(); return; }
+        _allowClose = true;
+        Close();
+    }
+
+    private async Task ConfirmCloseAsync()
+    {
+        if (_dialogOpen) return;
+        _dialogOpen = true;
+        try
+        {
+            if (!await ConfirmLeaveCurrentPageAsync()) return;
+            _allowClose = true;
+            Close();
+        }
+        finally { _dialogOpen = false; }
+    }
+
+    private async Task<bool> ConfirmLeaveCurrentPageAsync()
+    {
+        if (!HasCurrentChanges()) return true;
+        if (_root.XamlRoot is null) return false;
+
+        if (IsScenarioPage && _draft?.IsComplete != true)
+        {
+            var invalid = new ContentDialog
+            {
+                XamlRoot = _root.XamlRoot,
+                Title = _draftIsNew
+                    ? (English ? "Cancel scenario creation?" : "Отменить создание сценария?")
+                    : (English ? "Discard scenario changes?" : "Отменить изменения сценария?"),
+                Content = English ? "The changes you made will be lost." : "Внесённые изменения будут потеряны.",
+                PrimaryButtonText = _draftIsNew
+                    ? (English ? "Cancel creation" : "Отменить создание")
+                    : (English ? "Discard changes" : "Отменить изменения"),
+                CloseButtonText = English ? "Continue editing" : "Продолжить редактирование",
+                DefaultButton = ContentDialogButton.Close
+            };
+            if (await invalid.ShowAsync() != ContentDialogResult.Primary) return false;
+            ResetCurrentPageChanges();
+            return true;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = _root.XamlRoot,
+            Title = English ? "Save changes?" : "Сохранить изменения?",
+            Content = English ? "There are unsaved changes." : "Остались несохранённые изменения.",
+            PrimaryButtonText = T("Save"),
+            SecondaryButtonText = English ? "Don't save" : "Не сохранять",
+            CloseButtonText = English ? "Cancel" : "Отмена",
+            DefaultButton = ContentDialogButton.Primary
+        };
+        ContentDialogResult result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary) return await SaveCurrentPageAsync();
+        if (result == ContentDialogResult.Secondary)
+        {
+            ResetCurrentPageChanges();
+            return true;
+        }
+        return false;
+    }
+
+    private void ResetCurrentPageChanges()
+    {
+        if (_currentPage == "general")
+        {
+            _tray.TryUpdateHotKey(_settings.Current.SwitchScenarioHotKey, out _);
+            ResetPendingGeneral();
+        }
+        else if (_currentPage == "devices") ResetPendingAliases();
+        else if (_draftIsNew) { _draft = null; _scenarioBaseline = null; }
+        else if (_scenarioBaseline is not null)
+        {
+            _draft = _scenarioBaseline.Clone();
+            SetMonitorSlots(_draft);
+        }
+    }
+
+    private void BeginCapture()
+    {
+        _capturingHotKey = true;
+        if (_hotKeyCaptureButton is not null)
+            _hotKeyCaptureButton.Content = English ? "Press shortcut…" : "Нажмите сочетание…";
+        if (_hotKeyHint is not null)
+        {
+            _hotKeyHint.Text = English
+                ? "Use Ctrl, Alt, Shift or Win with another key."
+                : "Нажмите Ctrl, Alt, Shift или Win вместе с другой клавишей.";
+            _hotKeyHint.Visibility = Visibility.Visible;
+        }
+        _root.Focus(FocusState.Programmatic);
+    }
+
+    private void RootKeyDown(object sender, KeyRoutedEventArgs args)
+    {
+        if (!_capturingHotKey || args.Key is VirtualKey.Control or VirtualKey.Shift or VirtualKey.Menu or VirtualKey.LeftWindows or VirtualKey.RightWindows) return;
+        uint modifiers = 0;
+        if (Down(VirtualKey.Control)) modifiers |= HotKeyDefinition.Control;
+        if (Down(VirtualKey.Menu)) modifiers |= HotKeyDefinition.Alt;
+        if (Down(VirtualKey.Shift)) modifiers |= HotKeyDefinition.Shift;
+        if (Down(VirtualKey.LeftWindows) || Down(VirtualKey.RightWindows)) modifiers |= HotKeyDefinition.Win;
+        var hotKey = new HotKeyDefinition { Modifiers = modifiers, VirtualKey = (uint)args.Key };
+        _capturingHotKey = false;
+        if (_tray.TryUpdateHotKey(hotKey, out string error))
+        {
+            _pendingHotKey = hotKey;
+            if (_hotKeyTitle is not null) _hotKeyTitle.Text = $"{T("Hotkey")} — {TrayService.FormatHotKey(hotKey)}";
+            if (_hotKeyHint is not null)
+                _hotKeyHint.Text = English ? "Shortcut changed. Click Save." : "Сочетание изменено. Нажмите «Сохранить».";
+        }
+        else if (_hotKeyHint is not null) _hotKeyHint.Text = error;
+        if (_hotKeyCaptureButton is not null) _hotKeyCaptureButton.Content = T("Change");
+        UpdateFooterState();
+        args.Handled = true;
+    }
+
+    private static bool Down(VirtualKey key) => (GetKeyState((int)key) & unchecked((short)0x8000)) != 0;
+
+    private void CreateNewDraft()
+    {
+        if (_draftIsNew && _draft is not null) return;
+        string name = NextScenarioName();
+        _draft = new ScenarioDefinition
+        {
+            Name = name,
+            Icon = ScenarioIcon.Letters,
+            IconLetters = ScenarioDefinition.MakeIconLetters(name),
+            VolumePercent = null
+        };
+        if (_scenarios.Count == 0)
+        {
+            _draft.DisplayIds = _displays.Where(display => display.IsActive).Take(4).Select(display => display.Id).ToList();
+            AudioDevice? currentAudio = _audio.FirstOrDefault(device => device.IsDefault);
+            if (currentAudio is not null)
+            {
+                _draft.AudioDeviceId = currentAudio.Id;
+                _draft.AudioDeviceContainerId = currentAudio.ContainerId?.ToString("D") ?? string.Empty;
+            }
+        }
+        _scenarioBaseline = null;
+        _draftIsNew = true;
+        SetMonitorSlots(_draft);
+    }
+
+    private void LoadScenarioDraft(Guid id)
+    {
+        ScenarioDefinition? scenario = _scenarios.FirstOrDefault(item => item.Id == id);
+        _draft = scenario?.Clone();
+        _scenarioBaseline = scenario?.Clone();
+        _draftIsNew = false;
+        SetMonitorSlots(_draft);
+    }
+
+    private void SetMonitorSlots(ScenarioDefinition? scenario)
+    {
+        _draftMonitorSlots = new string[4];
+        if (scenario is null) return;
+        for (int index = 0; index < Math.Min(4, scenario.DisplayIds.Count); index++)
+            _draftMonitorSlots[index] = scenario.DisplayIds[index];
+    }
+
+    private string NextScenarioName()
+    {
+        string root = English ? "New scenario" : "Новый сценарий";
+        var names = _scenarios.Select(item => item.Name).ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+        for (int index = 1; ; index++)
+        {
+            string candidate = $"{root} {index}";
+            if (!names.Contains(candidate)) return candidate;
+        }
+    }
+
+    private async Task OpenNewScenarioDraftAsync()
+    {
+        if (_currentPage == "new" && _draft is not null) return;
+        if (!_devicesLoaded) await LoadDevicesAsync(false);
+        await RequestNavigateAsync("new");
+    }
+
+    private async Task LoadDevicesAsync(bool openNewScenario)
+    {
+        if (!_devicesLoaded)
+        {
+            try
+            {
+                _displays.Clear();
+                _displays.AddRange(await Task.Run(App.Displays.GetDisplays));
+                _audio.Clear();
+                _audio.AddRange(await App.Audio.GetVisibleRenderDevicesAsync(_displays, _scenarios.Cast<ScenarioDefinition?>().ToArray()));
+                _devicesLoaded = true;
+                if (_currentPage is "devices" || _currentPage == "new" || _currentPage.StartsWith("scenario:", StringComparison.Ordinal))
+                    ShowCurrentPage();
+            }
+            catch (Exception ex) { SettingsStore.Log(ex); }
+        }
+        if (openNewScenario) await RequestNavigateAsync("new");
     }
 
     private void ResetPendingGeneral()
@@ -470,10 +1076,40 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _pendingTheme = _settings.Current.Theme;
         _pendingLanguage = _settings.Current.Language;
         _pendingHotKey = CloneHotKey(_settings.Current.SwitchScenarioHotKey);
+    }
+
+    private void ResetPendingAliases()
+    {
         _pendingAliases.Clear();
         foreach ((string id, string alias) in _settings.Current.DeviceAliases)
             if (!string.IsNullOrWhiteSpace(alias)) _pendingAliases[id] = alias.Trim();
     }
+
+    private bool HasUnsavedGeneralChanges()
+    {
+        AppSettings current = _settings.Current;
+        return _pendingStartWithWindows != current.StartWithWindows ||
+            _pendingStartupMode != current.StartupScenarioMode ||
+            _pendingStartupScenarioId != current.StartupScenarioId ||
+            _pendingTheme != current.Theme ||
+            _pendingLanguage != current.Language ||
+            _pendingHotKey.Modifiers != current.SwitchScenarioHotKey.Modifiers ||
+            _pendingHotKey.VirtualKey != current.SwitchScenarioHotKey.VirtualKey;
+    }
+
+    private bool HasUnsavedAliasChanges()
+    {
+        Dictionary<string, string> saved = _settings.Current.DeviceAliases
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.Value))
+            .ToDictionary(pair => pair.Key, pair => pair.Value.Trim(), StringComparer.OrdinalIgnoreCase);
+        return saved.Count != _pendingAliases.Count || saved.Any(pair =>
+            !_pendingAliases.TryGetValue(pair.Key, out string? alias) || !string.Equals(pair.Value, alias, StringComparison.Ordinal));
+    }
+
+    private AppSettings PendingAliasSettings() => new()
+    {
+        DeviceAliases = new Dictionary<string, string>(_pendingAliases, StringComparer.OrdinalIgnoreCase)
+    };
 
     private static HotKeyDefinition CloneHotKey(HotKeyDefinition? hotKey)
     {
@@ -481,154 +1117,83 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         return new HotKeyDefinition { Modifiers = hotKey.Modifiers, VirtualKey = hotKey.VirtualKey };
     }
 
-    private bool HasUnsavedGeneralChanges()
-    {
-        AppSettings current = _settings.Current;
-        if (_pendingStartWithWindows != current.StartWithWindows ||
-            _pendingStartupMode != current.StartupScenarioMode ||
-            _pendingStartupScenarioId != current.StartupScenarioId ||
-            _pendingTheme != current.Theme ||
-            _pendingLanguage != current.Language ||
-            _pendingHotKey.Modifiers != current.SwitchScenarioHotKey.Modifiers ||
-            _pendingHotKey.VirtualKey != current.SwitchScenarioHotKey.VirtualKey)
-            return true;
+    private static bool ScenarioEquals(ScenarioDefinition left, ScenarioDefinition? right) => right is not null &&
+        left.Id == right.Id &&
+        string.Equals(left.Name.Trim(), right.Name.Trim(), StringComparison.Ordinal) &&
+        left.DisplayIds.SequenceEqual(right.DisplayIds, StringComparer.OrdinalIgnoreCase) &&
+        string.Equals(left.AudioDeviceId, right.AudioDeviceId, StringComparison.OrdinalIgnoreCase) &&
+        left.VolumePercent == right.VolumePercent &&
+        left.Icon == right.Icon &&
+        string.Equals(ScenarioDefinition.MakeIconLetters(left.IconLetters),
+            ScenarioDefinition.MakeIconLetters(right.IconLetters), StringComparison.Ordinal);
 
-        Dictionary<string, string> saved = current.DeviceAliases
-            .Where(pair => !string.IsNullOrWhiteSpace(pair.Value))
-            .ToDictionary(pair => pair.Key, pair => pair.Value.Trim(), StringComparer.OrdinalIgnoreCase);
-        return saved.Count != _pendingAliases.Count ||
-            saved.Any(pair => !_pendingAliases.TryGetValue(pair.Key, out string? alias) ||
-                !string.Equals(pair.Value, alias, StringComparison.Ordinal));
-    }
+    private static bool OperationallyEqual(ScenarioDefinition left, ScenarioDefinition? right) => right is not null &&
+        left.DisplayIds.SequenceEqual(right.DisplayIds, StringComparer.OrdinalIgnoreCase) &&
+        string.Equals(left.AudioDeviceId, right.AudioDeviceId, StringComparison.OrdinalIgnoreCase) &&
+        left.VolumePercent == right.VolumePercent;
 
-    private void UpdateSaveButton()
-    {
-        if (_saveButton is not null) _saveButton.IsEnabled = HasUnsavedGeneralChanges();
-    }
+    private IEnumerable<IconChoice> IconChoices() =>
+    [
+        new(ScenarioIcon.Letters, T("Letters")),
+        new(ScenarioIcon.Desktop, T("Desktop")),
+        new(ScenarioIcon.Television, T("Television")),
+        new(ScenarioIcon.Sofa, T("Sofa")),
+        new(ScenarioIcon.Gamepad, T("Gamepad"))
+    ];
 
-    private async Task RequestCloseAsync()
-    {
-        if (HasUnsavedGeneralChanges())
-        {
-            await ConfirmCloseAsync();
-            return;
-        }
-        _allowClose = true;
-        Close();
-    }
-
-    private async Task ConfirmCloseAsync()
-    {
-        if (_closePromptOpen || _root.XamlRoot is null) return;
-        _closePromptOpen = true;
-        try
-        {
-            var dialog = new ContentDialog
+    private IEnumerable<IntChoice> VolumeChoices() =>
+        new int?[] { null, 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 }
+            .Select(value => new IntChoice(value, value switch
             {
-                XamlRoot = _root.XamlRoot,
-                Title = English ? "Save changes?" : "Сохранить изменения?",
-                Content = English
-                    ? "There are unsaved changes in settings."
-                    : "В настройках остались несохранённые изменения.",
-                PrimaryButtonText = T("Save"),
-                SecondaryButtonText = English ? "Don't save" : "Не сохранять",
-                CloseButtonText = English ? "Cancel" : "Отмена",
-                DefaultButton = ContentDialogButton.Primary
-            };
-            ContentDialogResult result = await dialog.ShowAsync();
-            if (result == ContentDialogResult.Primary && !SaveGeneral(rebuildShell: false)) return;
-            if (result == ContentDialogResult.Secondary)
-            {
-                _tray.TryUpdateHotKey(_settings.Current.SwitchScenarioHotKey, out _);
-                ResetPendingGeneral();
-            }
-            if (result is ContentDialogResult.Primary or ContentDialogResult.Secondary)
-            {
-                _allowClose = true;
-                Close();
-            }
-        }
-        finally { _closePromptOpen = false; }
-    }
+                null => T("NoChange"),
+                0 => "0% — mute",
+                int percent => $"{percent}%"
+            }));
 
-    private void BeginCapture(Button button) { _capturingHotKey = true; button.Content = English ? "Press shortcut…" : "Нажмите сочетание…"; if (_hotKeyHint is not null) _hotKeyHint.Text = English ? "Use Ctrl, Alt, Shift or Win with another key." : "Нажмите Ctrl, Alt, Shift или Win вместе с другой клавишей."; _root.Focus(FocusState.Programmatic); }
-    private void RootKeyDown(object sender, KeyRoutedEventArgs args)
+    private void ApplyTheme()
     {
-        if (!_capturingHotKey || args.Key is VirtualKey.Control or VirtualKey.Shift or VirtualKey.Menu or VirtualKey.LeftWindows or VirtualKey.RightWindows) return;
-        uint modifiers = 0; if (Down(VirtualKey.Control)) modifiers |= HotKeyDefinition.Control; if (Down(VirtualKey.Menu)) modifiers |= HotKeyDefinition.Alt; if (Down(VirtualKey.Shift)) modifiers |= HotKeyDefinition.Shift; if (Down(VirtualKey.LeftWindows) || Down(VirtualKey.RightWindows)) modifiers |= HotKeyDefinition.Win;
-        var hotKey = new HotKeyDefinition { Modifiers = modifiers, VirtualKey = (uint)args.Key };
-        if (_tray.TryUpdateHotKey(hotKey, out string error))
+        _root.RequestedTheme = _settings.Current.Theme switch
         {
-            _pendingHotKey = hotKey; _capturingHotKey = false;
-            if (_hotKeyTitle is not null) _hotKeyTitle.Text = $"{T("Hotkey")} — {TrayService.FormatHotKey(hotKey)}";
-            if (_hotKeyCaptureButton is not null) _hotKeyCaptureButton.Content = T("Change");
-            if (_hotKeyHint is not null) _hotKeyHint.Text = English ? "Shortcut changed. Click Save." : "Сочетание изменено. Нажмите «Сохранить».";
-            UpdateSaveButton();
-        }
-        else
+            AppThemeMode.Light => ElementTheme.Light,
+            AppThemeMode.Dark => ElementTheme.Dark,
+            _ => ElementTheme.Default
+        };
+        NativeTheme.Apply(WinRT.Interop.WindowNative.GetWindowHandle(this), _settings.Current.Theme);
+    }
+
+    private bool IsDark() => _settings.Current.Theme == AppThemeMode.Dark ||
+        (_settings.Current.Theme == AppThemeMode.System && NativeTheme.IsSystemDark());
+
+    private SolidColorBrush ThemeBrush(string key, Color fallback)
+    {
+        if (Application.Current.Resources.TryGetValue(key, out object? resource))
         {
-            _capturingHotKey = false;
-            if (_hotKeyCaptureButton is not null) _hotKeyCaptureButton.Content = T("Change");
-            if (_hotKeyHint is not null) _hotKeyHint.Text = error;
+            if (resource is SolidColorBrush brush) return brush;
+            if (resource is Color color) return new SolidColorBrush(color);
         }
-        args.Handled = true;
-    }
-    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern short GetKeyState(int key);
-    private static bool Down(VirtualKey key) => (GetKeyState((int)key) & unchecked((short)0x8000)) != 0;
-
-    private UIElement BuildScenariosPage()
-    {
-        var grid = new Grid { Margin = new Thickness(28), ColumnSpacing = 24 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250) }); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var left = new StackPanel { Spacing = 10 }; var create = new Button { Content = "+ " + T("Create") }; create.Click += (_, _) => CreateScenario(); left.Children.Add(create);
-        _scenarioList = new ListView { ItemsSource = _scenarios, DisplayMemberPath = "Name", SelectionMode = ListViewSelectionMode.Single, Height = 460 }; _scenarioList.SelectionChanged += (_, _) => { if (!_loading) { CaptureScenario(); _selectedScenario = _scenarioList.SelectedItem as ScenarioDefinition; ShowScenarioEditor(); } }; left.Children.Add(_scenarioList);
-        var delete = new Button { Content = T("Delete") }; delete.Click += (_, _) => DeleteScenario(); left.Children.Add(delete); Grid.SetColumn(left, 0); grid.Children.Add(left);
-        var editor = new StackPanel { Spacing = 10 }; Grid.SetColumn(editor, 1); grid.Children.Add(editor); _pageHost.Tag = editor;
-        _selectedScenario ??= _scenarios.FirstOrDefault(); _scenarioList.SelectedItem = _selectedScenario; ShowScenarioEditor();
-        return grid;
+        return new SolidColorBrush(fallback);
     }
 
-    private void ShowScenarioEditor()
+    private SolidColorBrush AccentBrush() => ThemeBrush(
+        "AccentFillColorDefaultBrush", new UISettings().GetColorValue(UIColorType.Accent));
+
+    private SolidColorBrush AccentTextBrush()
     {
-        if (_pageHost.Tag is not StackPanel editor) return;
-        editor.Children.Clear();
-        if (_selectedScenario is null) { editor.Children.Add(Heading(T("Scenarios"))); editor.Children.Add(new TextBlock { Text = English ? "Create your first scenario." : "Создайте первый сценарий." }); return; }
-        _loading = true; editor.Children.Add(Heading(T("Scenarios")));
-        editor.Children.Add(Label(T("Name"))); _scenarioName = new TextBox { Text = _selectedScenario.Name }; editor.Children.Add(_scenarioName);
-        editor.Children.Add(Label(T("Icon"))); _iconBox = new ComboBox { ItemsSource = IconChoices(), DisplayMemberPath = "Name", SelectedValuePath = "Value", SelectedValue = _selectedScenario.Icon }; editor.Children.Add(_iconBox);
-        for (int i = 0; i < 4; i++) { editor.Children.Add(Label($"{T("Monitor")} {i + 1}")); _monitorBoxes[i] = new ComboBox { DisplayMemberPath = "Name", SelectedValuePath = "Id" }; _monitorBoxes[i].SelectionChanged += (_, _) => { if (!_loading) RefreshMonitorChoices(); }; editor.Children.Add(_monitorBoxes[i]); }
-        editor.Children.Add(Label(T("Audio"))); _audioBox = new ComboBox { DisplayMemberPath = "Name", SelectedValuePath = "Id" }; BindAudio(); editor.Children.Add(_audioBox);
-        editor.Children.Add(Label(T("Volume"))); _volumeBox = new ComboBox { ItemsSource = VolumeChoices(), DisplayMemberPath = "Name", SelectedValuePath = "Value", SelectedValue = _selectedScenario.VolumePercent }; editor.Children.Add(_volumeBox);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 12, 0, 0) }; var save = new Button { Content = T("Save") }; save.Click += (_, _) => SaveScenario(false); actions.Children.Add(save); var open = new Button { Content = T("OpenDisplay") }; open.Click += (_, _) => SaveScenario(true); actions.Children.Add(open); var apply = new Button { Content = T("Apply") }; apply.Click += async (_, _) => { if (SaveScenario(false)) await _tray.ApplyScenarioAsync(_selectedScenario.Id); }; actions.Children.Add(apply); editor.Children.Add(actions);
-        RefreshMonitorChoices(); _loading = false;
+        Color accent = new UISettings().GetColorValue(UIColorType.Accent);
+        double luminance = .299 * accent.R + .587 * accent.G + .114 * accent.B;
+        return ThemeBrush("TextOnAccentFillColorPrimaryBrush", luminance > 165 ? Colors.Black : Colors.White);
     }
 
-    private sealed record Choice(string Id, string Name); private sealed record IntChoice(int? Value, string Name); private sealed record IconChoice(ScenarioIcon Value, string Name); private sealed record StartupChoice(Guid? Id, string Name);
-    private IEnumerable<IconChoice> IconChoices() => new[] { new IconChoice(ScenarioIcon.Automatic, English ? "Automatic letters" : "Автоматические буквы"), new IconChoice(ScenarioIcon.Desktop, English ? "Desktop" : "Компьютер"), new IconChoice(ScenarioIcon.Television, English ? "Television" : "Телевизор"), new IconChoice(ScenarioIcon.Sofa, English ? "Sofa" : "Диван"), new IconChoice(ScenarioIcon.Gamepad, English ? "Gamepad" : "Геймпад") };
-    private IEnumerable<IntChoice> VolumeChoices() => new int?[] { null, 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 }.Select(value => new IntChoice(value, value switch { null => T("NoChange"), 0 => "0% — mute", int p => $"{p}%" }));
-    private void BindAudio()
-    {
-        if (_audioBox is null || _selectedScenario is null) return;
-        _audioBox.ItemsSource = _audio.Select(device => new Choice(device.Id, DeviceAliasService.NameFor(_settings.Current, device.Id, device.DisplayName ?? device.Name))).ToList(); _audioBox.SelectedValue = _selectedScenario.AudioDeviceId;
-    }
-    private void RefreshMonitorChoices()
-    {
-        if (_selectedScenario is null) return; var selected = _monitorBoxes.Select(box => box.SelectedValue as string).ToArray();
-        for (int i = 0; i < 4; i++) { string? own = selected[i]; var used = selected.Where((id, index) => index != i && !string.IsNullOrWhiteSpace(id)).ToHashSet(StringComparer.OrdinalIgnoreCase); var choices = _displays.Where(device => device.Id == own || !used.Contains(device.Id)).Select(device => new Choice(device.Id, DeviceAliasService.NameFor(_settings.Current, device.Id, device.Name))).ToList(); if (i > 0) choices.Insert(0, new Choice(string.Empty, T("None"))); _monitorBoxes[i].ItemsSource = choices; _monitorBoxes[i].SelectedValue = own ?? (i == 0 ? _selectedScenario.DisplayIds.FirstOrDefault() : string.Empty); }
-    }
-    private void CaptureScenario()
-    {
-        if (_selectedScenario is null || _scenarioName is null) return; _selectedScenario.Name = _scenarioName.Text.Trim(); _selectedScenario.Icon = _iconBox?.SelectedValue is ScenarioIcon icon ? icon : ScenarioIcon.Automatic; _selectedScenario.DisplayIds = _monitorBoxes.Select(box => box.SelectedValue as string).Where(id => !string.IsNullOrWhiteSpace(id)).Cast<string>().ToList(); if (_audioBox?.SelectedValue is string audioId) { _selectedScenario.AudioDeviceId = audioId; _selectedScenario.AudioDeviceContainerId = _audio.FirstOrDefault(item => item.Id == audioId)?.ContainerId?.ToString("D") ?? string.Empty; } _selectedScenario.VolumePercent = _volumeBox?.SelectedValue as int?;
-    }
-    private bool SaveScenario(bool openSettings)
-    {
-        CaptureScenario(); if (_selectedScenario is null || !_selectedScenario.IsComplete) return false; _settings.Current.Scenarios = _scenarios.Select(item => item.Clone()).ToList(); _settings.Save(); _tray.Refresh(); if (openSettings) Process.Start(new ProcessStartInfo("ms-settings:display") { UseShellExecute = true }); return true;
-    }
-    private void CreateScenario() { CaptureScenario(); if (_selectedScenario is not null && !_selectedScenario.IsComplete) return; var scenario = new ScenarioDefinition { Name = English ? "New scenario" : "Новый сценарий" }; _scenarios.Add(scenario); _selectedScenario = scenario; ShowPage("scenarios"); }
-    private void DeleteScenario() { if (_selectedScenario is null) return; _scenarios.Remove(_selectedScenario); _settings.Current.Scenarios.RemoveAll(item => item.Id == _selectedScenario.Id); _settings.Save(); _selectedScenario = _scenarios.FirstOrDefault(); ShowPage("scenarios"); }
+    private static string ScenarioPage(Guid id) => $"scenario:{id:D}";
 
-    private async Task LoadDevicesAsync()
+    private static bool TryScenarioId(string page, out Guid id)
     {
-        try { _displays.Clear(); _displays.AddRange(await Task.Run(App.Displays.GetDisplays)); _audio.Clear(); _audio.AddRange(await App.Audio.GetVisibleRenderDevicesAsync(_displays, _scenarios.Cast<ScenarioDefinition?>().ToArray())); ShowPage(_currentPage); } catch (Exception ex) { SettingsStore.Log(ex); }
+        id = Guid.Empty;
+        return page.StartsWith("scenario:", StringComparison.Ordinal) && Guid.TryParse(page[9..], out id);
     }
+
+    private sealed record Choice(string Id, string Name);
+    private sealed record IntChoice(int? Value, string Name);
+    private sealed record IconChoice(ScenarioIcon Value, string Name);
+    private sealed record StartupChoice(Guid? Id, string Name);
 }

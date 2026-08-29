@@ -71,12 +71,15 @@ public sealed class TrayService : IDisposable
         {
             if (message == TrayMessage)
             {
-                if (unchecked((uint)lParam.ToInt64()) == TrayNative.WM_RBUTTONUP) ShowMenu();
+                uint trayEvent = unchecked((uint)lParam.ToInt64());
+                if (trayEvent == TrayNative.WM_RBUTTONUP) ShowMenu();
+                else if (trayEvent == TrayNative.WM_LBUTTONDBLCLK && !IsRemoteSession)
+                    _dispatcher.TryEnqueue(HandleShortcutAction);
                 return nint.Zero;
             }
             if (message == TrayNative.WM_HOTKEY && (int)wParam == SwitchHotKeyId)
             {
-                if (!IsRemoteSession) _dispatcher.TryEnqueue(ApplyNext);
+                if (!IsRemoteSession) _dispatcher.TryEnqueue(HandleShortcutAction);
                 return nint.Zero;
             }
             if (message == TrayNative.WM_WTSSESSION_CHANGE)
@@ -193,7 +196,7 @@ public sealed class TrayService : IDisposable
         if (_hdrCommands.TryGetValue(command, out ActiveDisplayStatus? display)) { _ = ToggleHdrAsync(display); return; }
         switch (command)
         {
-            case SwitchCommand: ApplyNext(); break;
+            case SwitchCommand: HandleShortcutAction(); break;
             case MuteCommand: ToggleMute(); break;
             case SettingsCommand: ShowSettings(); break;
             case ExitCommand: App.Quit(); break;
@@ -231,9 +234,11 @@ public sealed class TrayService : IDisposable
     private void ApplyNext()
     {
         if (IsRemoteSession) return;
-        if (!_settings.IsConfigured) { ShowSettings(); return; }
+        if (_settings.Current.Scenarios.Count < 2) { ShowSettings(openNewScenario: true); return; }
         _ = ApplyAsync(GetNextScenario().Id);
     }
+
+    private void HandleShortcutAction() => ApplyNext();
 
     private ScenarioDefinition GetNextScenario()
     {
@@ -266,12 +271,17 @@ public sealed class TrayService : IDisposable
         return false;
     }
 
-    public void ShowSettings()
+    public void ShowSettings(bool openNewScenario = false)
     {
-        if (_settingsWindow is not null) { _settingsWindow.Activate(); return; }
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            if (openNewScenario) _settingsWindow.OpenNewScenarioDraft();
+            return;
+        }
         try
         {
-            _settingsWindow = new WinUiSettingsWindow(_settings, this);
+            _settingsWindow = new WinUiSettingsWindow(_settings, this, openNewScenario);
             _settingsWindow.ClosedByUser += (_, _) => _settingsWindow = null;
             _settingsWindow.Activate();
         }
