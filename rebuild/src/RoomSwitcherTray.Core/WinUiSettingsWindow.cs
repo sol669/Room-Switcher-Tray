@@ -27,7 +27,6 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private readonly Dictionary<string, Button> _navButtons = [];
     private readonly Dictionary<string, string> _pendingAliases = new(StringComparer.OrdinalIgnoreCase);
     private StackPanel? _scenarioNavPanel;
-    private Button? _newScenarioButton;
     private Button? _saveButton;
     private Button? _deleteButton;
     private TextBlock? _hotKeyTitle;
@@ -132,14 +131,14 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Theme") => "Theme", (true, "Language") => "Language",
         (true, "Monitors") => "MONITORS", (true, "AudioDevices") => "AUDIO DEVICES",
         (true, "DeviceAlias") => "Name in RoomSwitcher", (true, "ScenarioName") => "Scenario name",
-        (true, "ScenarioDevices") => "DEVICES IN SCENARIO", (true, "Monitor") => "Monitor",
+        (true, "ScenarioSettings") => "SCENARIO SETTINGS", (true, "Monitor") => "Monitor",
         (true, "Audio") => "Audio device", (true, "Volume") => "Volume",
         (true, "ScenarioIcon") => "Scenario icon", (true, "Letters") => "Letters",
         (true, "None") => "None", (true, "NoChange") => "Don't change",
         (true, "Desktop") => "Computer", (true, "Television") => "Television",
         (true, "Sofa") => "Sofa", (true, "Gamepad") => "Gamepad",
         (true, "Close") => "Close", (true, "Save") => "Save", (true, "Delete") => "Delete",
-        (true, "FooterVersion") => "RoomSwitcher 0.9.0",
+        (true, "FooterVersion") => "RoomSwitcher 0.9.1",
         (false, "Settings") => "НАСТРОЙКИ", (false, "Scenarios") => "СЦЕНАРИИ",
         (false, "General") => "Основные", (false, "Devices") => "Устройства",
         (false, "NewScenario") => "Новый сценарий", (false, "StartupScenario") => "Сценарий при запуске",
@@ -148,14 +147,14 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Theme") => "Тема", (false, "Language") => "Язык",
         (false, "Monitors") => "МОНИТОРЫ", (false, "AudioDevices") => "АУДИОУСТРОЙСТВА",
         (false, "DeviceAlias") => "Имя в RoomSwitcher", (false, "ScenarioName") => "Название сценария",
-        (false, "ScenarioDevices") => "УСТРОЙСТВА В СЦЕНАРИИ", (false, "Monitor") => "Монитор",
+        (false, "ScenarioSettings") => "НАСТРОЙКИ СЦЕНАРИЯ", (false, "Monitor") => "Монитор",
         (false, "Audio") => "Аудиоустройство", (false, "Volume") => "Громкость",
         (false, "ScenarioIcon") => "Иконка сценария", (false, "Letters") => "Литеры",
         (false, "None") => "Нет", (false, "NoChange") => "Не менять",
         (false, "Desktop") => "Компьютер", (false, "Television") => "Телевизор",
         (false, "Sofa") => "Диван", (false, "Gamepad") => "Геймпад",
         (false, "Close") => "Закрыть", (false, "Save") => "Сохранить", (false, "Delete") => "Удалить",
-        (false, "FooterVersion") => "RoomSwitcher 0.9.0",
+        (false, "FooterVersion") => "RoomSwitcher 0.9.1",
         _ => key
     };
 
@@ -167,15 +166,17 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var main = new Grid();
-        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+        // The visible navigation cell is 244 px wide (280 minus its 20/16 margins),
+        // exactly matching the value-control column used by every settings row.
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
         main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         main.Children.Add(BuildNavigation());
         Grid.SetColumn(_pageHost, 1);
         main.Children.Add(_pageHost);
         Grid.SetRow(main, 0);
 
-        var footer = new Grid { Margin = new Thickness(20, 10, 28, 18) };
-        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+        var footer = new Grid { Margin = new Thickness(20, 10, 56, 18) };
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -223,64 +224,54 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private UIElement BuildNavigation()
     {
-        var navigation = new Grid { Margin = new Thickness(20, 15, 16, 12) };
-        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var navigation = new Grid { Margin = new Thickness(20, 20, 16, 12) };
         navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         navigation.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var settingsGroup = new StackPanel { Spacing = 5 };
-        settingsGroup.Children.Add(NavSection(T("Settings")));
+        settingsGroup.Children.Add(HeaderCell(string.Empty));
         settingsGroup.Children.Add(NavButton(T("General"), "general"));
         settingsGroup.Children.Add(NavButton(T("Devices"), "devices"));
-        Grid.SetRow(settingsGroup, 1);
+        settingsGroup.Children.Add(NavigationSeparatorCell());
         navigation.Children.Add(settingsGroup);
 
-        TextBlock scenarioHeader = NavSection(T("Scenarios"));
-        scenarioHeader.Margin = new Thickness(8, 22, 0, 6);
-        Grid.SetRow(scenarioHeader, 3);
-        navigation.Children.Add(scenarioHeader);
-
-        _scenarioNavPanel = new StackPanel { Spacing = 5 };
+        _scenarioNavPanel = new StackPanel { Spacing = 5, Margin = new Thickness(0, 5, 0, 0) };
         var scenarioScroll = new ScrollViewer
         {
             Content = _scenarioNavPanel,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
         };
-        Grid.SetRow(scenarioScroll, 4);
+        Grid.SetRow(scenarioScroll, 1);
         navigation.Children.Add(scenarioScroll);
-
-        _newScenarioButton = NavButton("+ " + T("NewScenario"), "new");
-        _newScenarioButton.Margin = new Thickness(0, 5, 0, 0);
-        Grid.SetRow(_newScenarioButton, 5);
-        navigation.Children.Add(_newScenarioButton);
         RebuildScenarioNavigation();
         return navigation;
     }
 
-    private static TextBlock NavSection(string text) => new()
+    private static Border NavigationSeparatorCell() => new()
     {
-        Text = text,
-        FontSize = 11,
-        FontWeight = FontWeights.SemiBold,
-        Opacity = .68,
-        Margin = new Thickness(8, 0, 0, 6)
+        Height = 46,
+        Child = new Border
+        {
+            Height = 1,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Color.FromArgb(55, 128, 128, 128)),
+            Margin = new Thickness(8, 0, 8, 0)
+        }
     };
 
-    private Button NavButton(string text, string page)
+    private Button NavButton(string text, string page, bool nested = false)
     {
         var button = new Button
         {
             Content = text,
-            Height = 44,
+            Height = 46,
             Padding = new Thickness(14, 0, 14, 0),
             CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Margin = nested ? new Thickness(8, 0, 0, 0) : new Thickness(0)
         };
         _navButtons[page] = button;
         button.Click += async (_, _) => await RequestNavigateAsync(page);
@@ -292,12 +283,14 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         if (_scenarioNavPanel is null) return;
         foreach (string key in _navButtons.Keys.Where(key => key.StartsWith("scenario:", StringComparison.Ordinal)).ToList())
             _navButtons.Remove(key);
+        _navButtons.Remove("new");
         _scenarioNavPanel.Children.Clear();
         foreach (ScenarioDefinition scenario in _scenarios)
         {
             string page = ScenarioPage(scenario.Id);
-            _scenarioNavPanel.Children.Add(NavButton(scenario.Name, page));
+            _scenarioNavPanel.Children.Add(NavButton(scenario.Name, page, nested: true));
         }
+        _scenarioNavPanel.Children.Add(NavButton("+ " + T("NewScenario"), "new", nested: true));
         RefreshNavigationSelection();
     }
 
@@ -348,6 +341,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     {
         _loading = true;
         StackPanel panel = PagePanel();
+        panel.Children.Add(HeaderCell(string.Empty));
         _startupChoiceBox = SettingsComboBox(new ComboBox { DisplayMemberPath = "Name" });
         var startupChoices = new List<StartupChoice> { new(null, T("LastLoaded")) };
         startupChoices.AddRange(_scenarios.Where(s => s.IsComplete).Select(s => new StartupChoice(s.Id, s.Name)));
@@ -380,9 +374,17 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             MinWidth = 0,
             Width = 44,
             OffContent = string.Empty,
-            OnContent = string.Empty
+            OnContent = string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0)
         };
-        _autostartState = new TextBlock { MinWidth = 58, TextAlignment = TextAlignment.Right, Opacity = .72 };
+        _autostartState = new TextBlock
+        {
+            MinWidth = 58,
+            TextAlignment = TextAlignment.Right,
+            Opacity = .72,
+            VerticalAlignment = VerticalAlignment.Center
+        };
         _autostartToggle.Toggled += (_, _) =>
         {
             UpdateAutostartState();
@@ -438,6 +440,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             return PageScroll(panel);
         }
 
+        panel.Children.Add(HeaderCell(T("ScenarioSettings")));
         TextBox name = SettingsTextBox(new TextBox { Text = _draft.Name, MaxLength = 80 });
         name.TextChanged += (_, _) =>
         {
@@ -446,7 +449,6 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             UpdateFooterState();
         };
         panel.Children.Add(SettingRow(T("ScenarioName"), name));
-        panel.Children.Add(Section(T("ScenarioDevices"), first: false));
 
         for (int index = 0; index < 4; index++)
         {
@@ -493,17 +495,17 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         };
         panel.Children.Add(SettingRow(T("Volume"), volume));
 
+        List<IconChoice> iconChoices = IconChoices().ToList();
         ComboBox icon = SettingsComboBox(new ComboBox
         {
-            ItemsSource = IconChoices(),
+            ItemsSource = iconChoices,
             DisplayMemberPath = "Name",
-            SelectedValuePath = "Value",
-            SelectedValue = _draft.Icon
+            SelectedIndex = Math.Clamp((int)_draft.Icon, 0, iconChoices.Count - 1)
         });
         icon.SelectionChanged += (_, _) =>
         {
-            if (_loading || _draft is null || icon.SelectedValue is not ScenarioIcon selected) return;
-            _draft.Icon = selected;
+            if (_loading || _draft is null || icon.SelectedItem is not IconChoice selected) return;
+            _draft.Icon = selected.Value;
             ShowCurrentPage();
             UpdateFooterState();
         };
@@ -570,7 +572,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             .Select(group => group.First())
             .ToList();
         if (items.Count == 0) return;
-        panel.Children.Add(Section(heading, panel.Children.Count == 0));
+        panel.Children.Add(HeaderCell(heading));
         foreach ((string id, string systemName) in items)
         {
             TextBox alias = SettingsTextBox(new TextBox
@@ -599,10 +601,10 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private static StackPanel PagePanel() => new()
     {
-        MaxWidth = 660,
-        HorizontalAlignment = HorizontalAlignment.Stretch,
+        Width = 540,
+        HorizontalAlignment = HorizontalAlignment.Left,
         Spacing = 5,
-        Margin = new Thickness(24, 20, 34, 12)
+        Margin = new Thickness(24, 20, 0, 12)
     };
 
     private static ScrollViewer PageScroll(UIElement content) => new()
@@ -611,17 +613,26 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
         HorizontalContentAlignment = HorizontalAlignment.Stretch,
-        Padding = new Thickness(0, 0, 8, 0)
+        Padding = new Thickness(0)
     };
 
-    private static TextBlock Section(string text, bool first) => new()
+    private static Border HeaderCell(string text)
     {
-        Text = text,
-        FontSize = 12,
-        FontWeight = FontWeights.SemiBold,
-        Opacity = .68,
-        Margin = new Thickness(2, first ? 0 : 13, 0, 1)
-    };
+        var cell = new Border { Height = 46 };
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            cell.Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Opacity = .68,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(2, 0, 0, 6)
+            };
+        }
+        return cell;
+    }
 
     private void FinishInitialLoading(FrameworkElement element)
     {
@@ -634,7 +645,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private ComboBox SettingsComboBox(ComboBox comboBox)
     {
-        comboBox.Width = 270;
+        comboBox.Width = 244;
         comboBox.HorizontalAlignment = HorizontalAlignment.Stretch;
         ApplyControlStyle(comboBox, "RoomSettingsComboBoxStyle");
         return comboBox;
@@ -642,7 +653,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private TextBox SettingsTextBox(TextBox textBox)
     {
-        textBox.Width = 270;
+        textBox.Width = 244;
         textBox.HorizontalAlignment = HorizontalAlignment.Stretch;
         ApplyControlStyle(textBox, "RoomDeviceAliasTextBoxStyle");
         return textBox;
@@ -678,16 +689,20 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private Border ToggleSettingRow(string title, TextBlock state, ToggleSwitch toggle)
     {
-        var grid = new Grid { ColumnSpacing = 12 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center });
+        state.HorizontalAlignment = HorizontalAlignment.Right;
+        state.VerticalAlignment = VerticalAlignment.Center;
+        toggle.HorizontalAlignment = HorizontalAlignment.Right;
+        toggle.VerticalAlignment = VerticalAlignment.Center;
+
+        var right = new Grid { Width = 244, Height = 34, ColumnSpacing = 12 };
+        right.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        right.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        right.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Grid.SetColumn(state, 1);
         Grid.SetColumn(toggle, 2);
-        grid.Children.Add(state);
-        grid.Children.Add(toggle);
-        return SettingsCard(grid);
+        right.Children.Add(state);
+        right.Children.Add(toggle);
+        return SettingRow(title, right);
     }
 
     private static Border SettingsCard(Grid content)
