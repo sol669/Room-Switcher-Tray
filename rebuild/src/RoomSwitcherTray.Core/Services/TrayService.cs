@@ -49,7 +49,7 @@ public sealed class TrayService : IDisposable
             0, 0, 0, 0, nint.Zero, nint.Zero, instance, nint.Zero);
         TrayNative.WTSRegisterSessionNotification(_window, TrayNative.NOTIFY_FOR_THIS_SESSION);
 
-        _icon = TrayIconFactory.Create();
+        _icon = TrayIconFactory.Create(GetActiveScenario());
         _notifyData = new TrayNative.NOTIFYICONDATA
         {
             cbSize = (uint)Marshal.SizeOf<TrayNative.NOTIFYICONDATA>(), hWnd = _window, uID = 1,
@@ -294,9 +294,22 @@ public sealed class TrayService : IDisposable
 
     internal void Refresh()
     {
+        nint replacement = TrayIconFactory.Create(GetActiveScenario());
+        nint previous = _icon;
+        _icon = replacement;
         _notifyData.szTip = BuildTooltip();
-        _notifyData.uFlags = TrayNative.NIF_TIP;
-        TrayNative.Shell_NotifyIcon(TrayNative.NIM_MODIFY, ref _notifyData);
+        _notifyData.hIcon = replacement;
+        _notifyData.uFlags = TrayNative.NIF_TIP | TrayNative.NIF_ICON;
+        if (TrayNative.Shell_NotifyIcon(TrayNative.NIM_MODIFY, ref _notifyData))
+        {
+            if (previous != nint.Zero) TrayNative.DestroyIcon(previous);
+        }
+        else
+        {
+            TrayNative.DestroyIcon(replacement);
+            _icon = previous;
+            _notifyData.hIcon = previous;
+        }
     }
 
     private string BuildTooltip() => IsRemoteSession ? UiText.Get(_settings.Current, "Remote") : GetActiveScenario()?.Name ?? "RoomSwitcher";

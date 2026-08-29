@@ -6,13 +6,22 @@ namespace RoomSwitcherTray.Core.Services;
 
 internal static class TrayIconFactory
 {
-    public static nint Create()
+    public static nint Create(ScenarioDefinition? scenario = null)
     {
         using var bitmap = new Bitmap(32, 32, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using Graphics graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
         Color color = UsesLightTaskbar() ? Color.FromArgb(24, 24, 24) : Color.White;
+
+        if (scenario?.Icon == ScenarioIcon.Letters)
+        {
+            DrawLetters(graphics, color, ScenarioDefinition.MakeIconLetters(
+                string.IsNullOrWhiteSpace(scenario.IconLetters) ? scenario.Name : scenario.IconLetters));
+            return bitmap.GetHicon();
+        }
+
         using var pen = new Pen(color, 2.7f)
         {
             StartCap = LineCap.Round,
@@ -33,6 +42,21 @@ internal static class TrayIconFactory
         graphics.DrawArc(pen, -5, 12, 20, 20, 270, 90);
 
         return bitmap.GetHicon();
+    }
+
+    private static void DrawLetters(Graphics graphics, Color color, string letters)
+    {
+        string text = string.IsNullOrWhiteSpace(letters) ? "RS" : letters[..Math.Min(2, letters.Length)];
+        float size = text.Length == 1 ? 22f : 16f;
+        using var font = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel);
+        using var brush = new SolidBrush(color);
+        using var format = new StringFormat(StringFormat.GenericTypographic)
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+            FormatFlags = StringFormatFlags.NoWrap
+        };
+        graphics.DrawString(text, font, brush, new RectangleF(0, -1, 32, 32), format);
     }
 
     private static bool UsesLightTaskbar()

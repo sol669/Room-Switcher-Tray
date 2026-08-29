@@ -123,38 +123,42 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private string T(string key) => (English, key) switch
     {
-        (true, "Settings") => "SETTINGS", (true, "Scenarios") => "SCENARIOS",
+        (true, "Settings") => "Settings", (true, "Scenarios") => "Scenarios",
         (true, "General") => "General", (true, "Devices") => "Devices",
         (true, "NewScenario") => "New scenario", (true, "StartupScenario") => "Scenario at startup",
         (true, "LastLoaded") => "Last loaded", (true, "Hotkey") => "Hotkey",
         (true, "Change") => "Change…", (true, "Autostart") => "Autostart",
         (true, "Theme") => "Theme", (true, "Language") => "Language",
-        (true, "Monitors") => "MONITORS", (true, "AudioDevices") => "AUDIO DEVICES",
+        (true, "Behavior") => "Behavior", (true, "System") => "System",
+        (true, "Monitors") => "Monitors", (true, "AudioDevices") => "Audio devices",
         (true, "DeviceAlias") => "Name in RoomSwitcher", (true, "ScenarioName") => "Scenario name",
-        (true, "ScenarioSettings") => "SCENARIO SETTINGS", (true, "Monitor") => "Monitor",
+        (true, "ScenarioSettings") => "Scenario settings", (true, "Monitor") => "Monitor",
         (true, "Audio") => "Audio device", (true, "Volume") => "Volume",
+        (true, "Sound") => "Sound", (true, "TrayIcon") => "Tray icon",
         (true, "ScenarioIcon") => "Scenario icon", (true, "Letters") => "Letters",
         (true, "None") => "None", (true, "NoChange") => "Don't change",
         (true, "Desktop") => "Computer", (true, "Television") => "Television",
         (true, "Sofa") => "Sofa", (true, "Gamepad") => "Gamepad",
         (true, "Close") => "Close", (true, "Save") => "Save", (true, "Delete") => "Delete",
-        (true, "FooterVersion") => "RoomSwitcher 0.9.1",
-        (false, "Settings") => "НАСТРОЙКИ", (false, "Scenarios") => "СЦЕНАРИИ",
+        (true, "FooterVersion") => "RoomSwitcher 0.9.2",
+        (false, "Settings") => "Настройки", (false, "Scenarios") => "Сценарии",
         (false, "General") => "Основные", (false, "Devices") => "Устройства",
         (false, "NewScenario") => "Новый сценарий", (false, "StartupScenario") => "Сценарий при запуске",
         (false, "LastLoaded") => "Последний загруженный", (false, "Hotkey") => "Горячая клавиша",
         (false, "Change") => "Изменить…", (false, "Autostart") => "Автозапуск",
         (false, "Theme") => "Тема", (false, "Language") => "Язык",
-        (false, "Monitors") => "МОНИТОРЫ", (false, "AudioDevices") => "АУДИОУСТРОЙСТВА",
+        (false, "Behavior") => "Поведение", (false, "System") => "Система",
+        (false, "Monitors") => "Мониторы", (false, "AudioDevices") => "Аудиоустройства",
         (false, "DeviceAlias") => "Имя в RoomSwitcher", (false, "ScenarioName") => "Название сценария",
-        (false, "ScenarioSettings") => "НАСТРОЙКИ СЦЕНАРИЯ", (false, "Monitor") => "Монитор",
+        (false, "ScenarioSettings") => "Настройки сценария", (false, "Monitor") => "Монитор",
         (false, "Audio") => "Аудиоустройство", (false, "Volume") => "Громкость",
+        (false, "Sound") => "Звук", (false, "TrayIcon") => "Иконка в трее",
         (false, "ScenarioIcon") => "Иконка сценария", (false, "Letters") => "Литеры",
         (false, "None") => "Нет", (false, "NoChange") => "Не менять",
         (false, "Desktop") => "Компьютер", (false, "Television") => "Телевизор",
         (false, "Sofa") => "Диван", (false, "Gamepad") => "Геймпад",
         (false, "Close") => "Закрыть", (false, "Save") => "Сохранить", (false, "Delete") => "Удалить",
-        (false, "FooterVersion") => "RoomSwitcher 0.9.1",
+        (false, "FooterVersion") => "RoomSwitcher 0.9.2",
         _ => key
     };
 
@@ -229,7 +233,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         navigation.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         var settingsGroup = new StackPanel { Spacing = 5 };
-        settingsGroup.Children.Add(HeaderCell(string.Empty));
+        settingsGroup.Children.Add(SettingsTitleCell(T("Settings")));
         settingsGroup.Children.Add(NavButton(T("General"), "general"));
         settingsGroup.Children.Add(NavButton(T("Devices"), "devices"));
         settingsGroup.Children.Add(NavigationSeparatorCell());
@@ -257,6 +261,18 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             VerticalAlignment = VerticalAlignment.Center,
             Background = new SolidColorBrush(Color.FromArgb(55, 128, 128, 128)),
             Margin = new Thickness(8, 0, 8, 0)
+        }
+    };
+
+    private static Border SettingsTitleCell(string text) => new()
+    {
+        Height = 97,
+        Child = new TextBlock
+        {
+            Text = text,
+            FontSize = 30,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0)
         }
     };
 
@@ -341,7 +357,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     {
         _loading = true;
         StackPanel panel = PagePanel();
-        panel.Children.Add(HeaderCell(string.Empty));
+        panel.Children.Add(TitleSpacerCell());
+        panel.Children.Add(HeaderCell(T("Behavior")));
         _startupChoiceBox = SettingsComboBox(new ComboBox { DisplayMemberPath = "Name" });
         var startupChoices = new List<StartupChoice> { new(null, T("LastLoaded")) };
         startupChoices.AddRange(_scenarios.Where(s => s.IsComplete).Select(s => new StartupChoice(s.Id, s.Name)));
@@ -367,6 +384,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         panel.Children.Add(SettingRow(_hotKeyTitle, _hotKeyCaptureButton));
         _hotKeyHint = new TextBlock { Opacity = .68, Margin = new Thickness(14, 0, 0, 0), Visibility = Visibility.Collapsed };
         panel.Children.Add(_hotKeyHint);
+
+        panel.Children.Add(HeaderCell(T("System")));
 
         _autostartToggle = new ToggleSwitch
         {
@@ -424,6 +443,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     {
         _loading = true;
         StackPanel panel = PagePanel();
+        panel.Children.Add(TitleSpacerCell());
         AddDeviceAliasRows(panel, T("Monitors"), _displays.Select(display => (display.Id, display.Name)));
         AddDeviceAliasRows(panel, T("AudioDevices"), _audio.Select(audio => (audio.Id, audio.DisplayName ?? audio.Name)));
         FinishInitialLoading(panel);
@@ -434,6 +454,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     {
         _loading = true;
         StackPanel panel = PagePanel();
+        panel.Children.Add(TitleSpacerCell());
         if (_draft is null)
         {
             FinishInitialLoading(panel);
@@ -449,6 +470,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             UpdateFooterState();
         };
         panel.Children.Add(SettingRow(T("ScenarioName"), name));
+
+        panel.Children.Add(HeaderCell(T("Monitors")));
 
         for (int index = 0; index < 4; index++)
         {
@@ -493,7 +516,10 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         {
             if (!_loading && _draft is not null) { _draft.VolumePercent = volume.SelectedValue as int?; UpdateFooterState(); }
         };
+        panel.Children.Insert(panel.Children.Count - 1, HeaderCell(T("Sound")));
         panel.Children.Add(SettingRow(T("Volume"), volume));
+
+        panel.Children.Add(HeaderCell(T("TrayIcon")));
 
         List<IconChoice> iconChoices = IconChoices().ToList();
         ComboBox icon = SettingsComboBox(new ComboBox
@@ -571,8 +597,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             .GroupBy(device => device.Id, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToList();
-        if (items.Count == 0) return;
         panel.Children.Add(HeaderCell(heading));
+        if (items.Count == 0) return;
         foreach ((string id, string systemName) in items)
         {
             TextBox alias = SettingsTextBox(new TextBox
@@ -624,15 +650,15 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             cell.Child = new TextBlock
             {
                 Text = text,
-                FontSize = 12,
-                FontWeight = FontWeights.SemiBold,
-                Opacity = .68,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(2, 0, 0, 6)
+                Opacity = .52,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(2, 0, 0, 0)
             };
         }
         return cell;
     }
+
+    private static Border TitleSpacerCell() => new() { Height = 97 };
 
     private void FinishInitialLoading(FrameworkElement element)
     {
