@@ -1,12 +1,26 @@
 <Application
     x:Class="RoomSwitcherTray.Core.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:RoomSwitcherTray.Core">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <DataTemplate x:Key="RoomScenarioIconTemplate">
+                <Grid Height="26" HorizontalAlignment="Stretch"
+                      ToolTipService.ToolTip="{Binding Name}" AutomationProperties.Name="{Binding Name}">
+                    <local:ScenarioIconView Icon="{Binding Value}" Letters="{Binding Letters}"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Grid>
+            </DataTemplate>
+
+            <Style x:Key="RoomScenarioIconItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource DefaultComboBoxItemStyle}">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+            </Style>
 
             <Style x:Key="RoomSettingsCardStyle" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />

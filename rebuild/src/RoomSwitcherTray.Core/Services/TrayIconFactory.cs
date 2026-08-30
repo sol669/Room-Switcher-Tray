@@ -12,60 +12,37 @@ internal static class TrayIconFactory
         using Graphics graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
         Color color = UsesLightTaskbar() ? Color.FromArgb(24, 24, 24) : Color.White;
+        ScenarioIcon icon = scenario?.Icon ?? ScenarioIcon.Desktop;
+        string? letters = string.IsNullOrWhiteSpace(scenario?.IconLetters) ? scenario?.Name : scenario.IconLetters;
+        using GraphicsPath path = ScenarioArtwork.CreatePath(icon, letters);
 
-        if (scenario?.Icon == ScenarioIcon.Letters)
+        if (icon == ScenarioIcon.Letters)
         {
-            DrawLetters(graphics, color, ScenarioDefinition.MakeIconLetters(
-                string.IsNullOrWhiteSpace(scenario.IconLetters) ? scenario.Name : scenario.IconLetters));
+            using var brush = new SolidBrush(color);
+            graphics.FillPath(brush, path);
             return bitmap.GetHicon();
         }
 
-        using var pen = new Pen(color, 2.7f)
+        using var pen = new Pen(color, ScenarioArtwork.StrokeWidth)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
             LineJoin = LineJoin.Round
         };
 
-        using var path = new GraphicsPath();
-        path.AddArc(4, 5, 5, 5, 180, 90);
-        path.AddArc(23, 5, 5, 5, 270, 90);
-        path.AddArc(23, 20, 5, 5, 0, 90);
-        path.AddArc(4, 20, 5, 5, 90, 90);
-        path.CloseFigure();
         graphics.DrawPath(pen, path);
-        graphics.DrawLine(pen, 14.5f, 25, 14.5f, 29);
-        graphics.DrawLine(pen, 17.5f, 25, 17.5f, 29);
-        graphics.DrawLine(pen, 10, 29, 22, 29);
-        graphics.DrawArc(pen, -5, 12, 20, 20, 270, 90);
 
         return bitmap.GetHicon();
-    }
-
-    private static void DrawLetters(Graphics graphics, Color color, string letters)
-    {
-        string text = string.IsNullOrWhiteSpace(letters) ? "RS" : letters[..Math.Min(2, letters.Length)];
-        float size = text.Length == 1 ? 22f : 16f;
-        using var font = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel);
-        using var brush = new SolidBrush(color);
-        using var format = new StringFormat(StringFormat.GenericTypographic)
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-            FormatFlags = StringFormatFlags.NoWrap
-        };
-        graphics.DrawString(text, font, brush, new RectangleF(0, -1, 32, 32), format);
     }
 
     private static bool UsesLightTaskbar()
     {
         try
         {
-            object? value = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")?
-                .GetValue("SystemUsesLightTheme");
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            object? value = key?.GetValue("SystemUsesLightTheme");
             return value is int number && number != 0;
         }
         catch { return false; }

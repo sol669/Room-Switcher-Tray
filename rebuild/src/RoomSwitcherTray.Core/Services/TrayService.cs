@@ -7,7 +7,6 @@ public sealed class TrayService : IDisposable
 {
     private const uint TrayMessage = TrayNative.WM_APP + 1;
     private const int SwitchHotKeyId = 1;
-    private const uint SwitchCommand = 1000;
     private const uint ScenarioCommandBase = 2000;
     private const uint SettingsCommand = 3000;
     private const uint ExitCommand = 3001;
@@ -108,13 +107,17 @@ public sealed class TrayService : IDisposable
             }
             else if (_settings.IsConfigured)
             {
-                TrayNative.AppendMenu(menu, TrayNative.MF_STRING, SwitchCommand,
-                    $"{UiText.Get(_settings.Current, "Next")}\t{FormatHotKey(_settings.Current.SwitchScenarioHotKey)}");
-                TrayNative.SetMenuDefaultItem(menu, SwitchCommand, 0);
+                Guid? nextScenarioId = _settings.Current.Scenarios.Count > 1 ? GetNextScenario().Id : null;
                 foreach ((ScenarioDefinition scenario, int index) in _settings.Current.Scenarios.Select((item, index) => (item, index)))
-                    TrayNative.AppendMenu(menu, TrayNative.MF_STRING |
-                        (_settings.Current.ActiveScenarioId == scenario.Id ? TrayNative.MF_CHECKED : 0),
-                        ScenarioCommandBase + (uint)index, scenario.Name);
+                {
+                    uint scenarioCommand = ScenarioCommandBase + (uint)index;
+                    string label = scenario.Name;
+                    if (scenario.Id == nextScenarioId)
+                        label += $"\t{FormatHotKey(_settings.Current.SwitchScenarioHotKey)}";
+                    TrayNative.AppendMenu(menu, TrayNative.MF_STRING, scenarioCommand, label);
+                    if (_settings.Current.ActiveScenarioId == scenario.Id || _settings.Current.Scenarios.Count == 1)
+                        TrayNative.SetMenuDefaultItem(menu, scenarioCommand, 0);
+                }
 
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
                 BuildStatusSection(menu, remoteSession: false);
@@ -196,7 +199,6 @@ public sealed class TrayService : IDisposable
         if (_hdrCommands.TryGetValue(command, out ActiveDisplayStatus? display)) { _ = ToggleHdrAsync(display); return; }
         switch (command)
         {
-            case SwitchCommand: HandleShortcutAction(); break;
             case MuteCommand: ToggleMute(); break;
             case SettingsCommand: ShowSettings(); break;
             case ExitCommand: App.Quit(); break;

@@ -3,6 +3,8 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using RoomSwitcherTray.Core.Services;
@@ -17,6 +19,9 @@ namespace RoomSwitcherTray.Core;
 /// <summary>Fixed WinUI settings shell shared by general, device and scenario pages.</summary>
 public sealed class WinUiSettingsWindow : Window, IDisposable
 {
+    private const double TitleBandHeight = 40;
+    private const double ContentTopMargin = 4;
+    private const double ValueColumnWidth = 244;
     private readonly SettingsStore _settings;
     private readonly TrayService _tray;
     private readonly List<ScenarioDefinition> _scenarios;
@@ -130,6 +135,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Change") => "Change…", (true, "Autostart") => "Autostart",
         (true, "Theme") => "Theme", (true, "Language") => "Language",
         (true, "Behavior") => "Behavior", (true, "System") => "System",
+        (true, "DisplaySettings") => "Display settings", (true, "SoundSettings") => "Sound settings",
+        (true, "Open") => "Open…",
         (true, "Monitors") => "Monitors", (true, "AudioDevices") => "Audio devices",
         (true, "DeviceAlias") => "Name in RoomSwitcher", (true, "ScenarioName") => "Scenario name",
         (true, "ScenarioSettings") => "Scenario settings", (true, "Monitor") => "Monitor",
@@ -140,7 +147,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Desktop") => "Computer", (true, "Television") => "Television",
         (true, "Sofa") => "Sofa", (true, "Gamepad") => "Gamepad",
         (true, "Close") => "Close", (true, "Save") => "Save", (true, "Delete") => "Delete",
-        (true, "FooterVersion") => "RoomSwitcher 0.9.2",
+        (true, "FooterVersion") => "RoomSwitcher 0.9.3",
         (false, "Settings") => "Настройки", (false, "Scenarios") => "Сценарии",
         (false, "General") => "Основные", (false, "Devices") => "Устройства",
         (false, "NewScenario") => "Новый сценарий", (false, "StartupScenario") => "Сценарий при запуске",
@@ -148,6 +155,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Change") => "Изменить…", (false, "Autostart") => "Автозапуск",
         (false, "Theme") => "Тема", (false, "Language") => "Язык",
         (false, "Behavior") => "Поведение", (false, "System") => "Система",
+        (false, "DisplaySettings") => "Параметры экрана", (false, "SoundSettings") => "Параметры звука",
+        (false, "Open") => "Открыть…",
         (false, "Monitors") => "Мониторы", (false, "AudioDevices") => "Аудиоустройства",
         (false, "DeviceAlias") => "Имя в RoomSwitcher", (false, "ScenarioName") => "Название сценария",
         (false, "ScenarioSettings") => "Настройки сценария", (false, "Monitor") => "Монитор",
@@ -158,7 +167,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Desktop") => "Компьютер", (false, "Television") => "Телевизор",
         (false, "Sofa") => "Диван", (false, "Gamepad") => "Геймпад",
         (false, "Close") => "Закрыть", (false, "Save") => "Сохранить", (false, "Delete") => "Удалить",
-        (false, "FooterVersion") => "RoomSwitcher 0.9.2",
+        (false, "FooterVersion") => "RoomSwitcher 0.9.3",
         _ => key
     };
 
@@ -228,7 +237,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private UIElement BuildNavigation()
     {
-        var navigation = new Grid { Margin = new Thickness(20, 20, 16, 12) };
+        var navigation = new Grid { Margin = new Thickness(20, ContentTopMargin, 16, 12) };
         navigation.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         navigation.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
@@ -266,7 +275,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private static Border SettingsTitleCell(string text) => new()
     {
-        Height = 97,
+        Height = TitleBandHeight,
         Child = new TextBlock
         {
             Text = text,
@@ -304,7 +313,31 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         foreach (ScenarioDefinition scenario in _scenarios)
         {
             string page = ScenarioPage(scenario.Id);
-            _scenarioNavPanel.Children.Add(NavButton(scenario.Name, page, nested: true));
+            Button button = NavButton(scenario.Name, page, nested: true);
+            button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            var content = new Grid { ColumnSpacing = 12 };
+            content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+            content.Children.Add(new TextBlock
+            {
+                Text = scenario.Name,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            var icon = new ScenarioIconView
+            {
+                Icon = scenario.Icon,
+                Letters = string.IsNullOrWhiteSpace(scenario.IconLetters) ? scenario.Name : scenario.IconLetters,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            icon.SetBinding(Control.ForegroundProperty,
+                new Binding { Source = button, Path = new PropertyPath(nameof(Control.Foreground)) });
+            Grid.SetColumn(icon, 1);
+            content.Children.Add(icon);
+            button.Content = content;
+            AutomationProperties.SetName(button, scenario.Name);
+            ToolTipService.SetToolTip(button, scenario.Name);
+            _scenarioNavPanel.Children.Add(button);
         }
         _scenarioNavPanel.Children.Add(NavButton("+ " + T("NewScenario"), "new", nested: true));
         RefreshNavigationSelection();
@@ -435,6 +468,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             if (!_loading && language.SelectedIndex >= 0) { _pendingLanguage = (AppLanguage)language.SelectedIndex; UpdateFooterState(); }
         };
         panel.Children.Add(SettingRow(T("Language"), language));
+        panel.Children.Add(SystemSettingsRow(T("DisplaySettings"), "ms-settings:display"));
+        panel.Children.Add(SystemSettingsRow(T("SoundSettings"), "ms-settings:sound"));
         FinishInitialLoading(panel);
         return PageScroll(panel);
     }
@@ -489,6 +524,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             panel.Children.Add(SettingRow($"{T("Monitor")} {index + 1}", monitor));
         }
 
+        panel.Children.Add(HeaderCell(T("Sound")));
         ComboBox audio = SettingsComboBox(new ComboBox { DisplayMemberPath = "Name", SelectedValuePath = "Id" });
         var audioChoices = new List<Choice> { new(string.Empty, T("None")) };
         audioChoices.AddRange(_audio.Select(device => new Choice(device.Id,
@@ -516,21 +552,27 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         {
             if (!_loading && _draft is not null) { _draft.VolumePercent = volume.SelectedValue as int?; UpdateFooterState(); }
         };
-        panel.Children.Insert(panel.Children.Count - 1, HeaderCell(T("Sound")));
         panel.Children.Add(SettingRow(T("Volume"), volume));
 
         panel.Children.Add(HeaderCell(T("TrayIcon")));
 
-        List<IconChoice> iconChoices = IconChoices().ToList();
+        List<ScenarioIconOption> iconChoices = IconChoices().ToList();
         ComboBox icon = SettingsComboBox(new ComboBox
         {
             ItemsSource = iconChoices,
-            DisplayMemberPath = "Name",
+            ItemTemplate = (DataTemplate)Application.Current.Resources["RoomScenarioIconTemplate"],
+            ItemContainerStyle = (Style)Application.Current.Resources["RoomScenarioIconItemStyle"],
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            // Balance the native template's 38-unit chevron column and leave
+            // enough vertical room for the icon inside a 34-unit control.
+            Padding = new Thickness(38, 4, 0, 4),
             SelectedIndex = Math.Clamp((int)_draft.Icon, 0, iconChoices.Count - 1)
         });
+        AutomationProperties.SetName(icon, T("ScenarioIcon"));
         icon.SelectionChanged += (_, _) =>
         {
-            if (_loading || _draft is null || icon.SelectedItem is not IconChoice selected) return;
+            if (_loading || _draft is null || icon.SelectedItem is not ScenarioIconOption selected) return;
             _draft.Icon = selected.Value;
             ShowCurrentPage();
             UpdateFooterState();
@@ -551,6 +593,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
                     letters.SelectionStart = position;
                 }
                 _draft.IconLetters = normalized;
+                iconChoices[0].Letters = normalized;
                 UpdateFooterState();
             };
             panel.Children.Add(SettingRow(T("Letters"), letters));
@@ -630,7 +673,9 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         Width = 540,
         HorizontalAlignment = HorizontalAlignment.Left,
         Spacing = 5,
-        Margin = new Thickness(24, 20, 0, 12)
+        // 13 scenario rows + 13 gaps + title + top margin = 707 logical px.
+        // Keep the normal 820px window usable without shrinking its 46px cards.
+        Margin = new Thickness(24, ContentTopMargin, 0, 0)
     };
 
     private static ScrollViewer PageScroll(UIElement content) => new()
@@ -658,7 +703,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         return cell;
     }
 
-    private static Border TitleSpacerCell() => new() { Height = 97 };
+    private static Border TitleSpacerCell() => new() { Height = TitleBandHeight };
 
     private void FinishInitialLoading(FrameworkElement element)
     {
@@ -671,7 +716,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private ComboBox SettingsComboBox(ComboBox comboBox)
     {
-        comboBox.Width = 244;
+        comboBox.Width = ValueColumnWidth;
         comboBox.HorizontalAlignment = HorizontalAlignment.Stretch;
         ApplyControlStyle(comboBox, "RoomSettingsComboBoxStyle");
         return comboBox;
@@ -679,7 +724,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private TextBox SettingsTextBox(TextBox textBox)
     {
-        textBox.Width = 244;
+        textBox.Width = ValueColumnWidth;
         textBox.HorizontalAlignment = HorizontalAlignment.Stretch;
         ApplyControlStyle(textBox, "RoomDeviceAliasTextBoxStyle");
         return textBox;
@@ -688,7 +733,40 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private Button SettingsButton(Button button)
     {
         ApplyControlStyle(button, "RoomHotkeyButtonStyle");
+        button.Width = ValueColumnWidth;
+        button.HorizontalAlignment = HorizontalAlignment.Stretch;
         return button;
+    }
+
+    private Border SystemSettingsRow(string title, string uri)
+    {
+        Button open = SettingsButton(new Button { Content = T("Open") });
+        open.Click += async (_, _) =>
+        {
+            try
+            {
+                if (await Launcher.LaunchUriAsync(new Uri(uri))) return;
+                throw new InvalidOperationException("Windows Settings did not open: " + uri);
+            }
+            catch (Exception ex)
+            {
+                SettingsStore.Log(ex);
+                if (_dialogOpen || _root.XamlRoot is null) return;
+                _dialogOpen = true;
+                try
+                {
+                    await new ContentDialog
+                    {
+                        XamlRoot = _root.XamlRoot,
+                        Title = title,
+                        Content = English ? "Unable to open Windows Settings." : "Не удалось открыть параметры Windows.",
+                        CloseButtonText = T("Close")
+                    }.ShowAsync();
+                }
+                finally { _dialogOpen = false; }
+            }
+        };
+        return SettingRow(title, open);
     }
 
     private static Button StyledButton(string text, string style, double minWidth)
@@ -720,7 +798,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         toggle.HorizontalAlignment = HorizontalAlignment.Right;
         toggle.VerticalAlignment = VerticalAlignment.Center;
 
-        var right = new Grid { Width = 244, Height = 34, ColumnSpacing = 12 };
+        var right = new Grid { Width = ValueColumnWidth, Height = 34, ColumnSpacing = 12 };
         right.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         right.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         right.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1173,9 +1251,9 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         string.Equals(left.AudioDeviceId, right.AudioDeviceId, StringComparison.OrdinalIgnoreCase) &&
         left.VolumePercent == right.VolumePercent;
 
-    private IEnumerable<IconChoice> IconChoices() =>
+    private IEnumerable<ScenarioIconOption> IconChoices() =>
     [
-        new(ScenarioIcon.Letters, T("Letters")),
+        new(ScenarioIcon.Letters, T("Letters"), _draft?.IconLetters ?? "AB"),
         new(ScenarioIcon.Desktop, T("Desktop")),
         new(ScenarioIcon.Television, T("Television")),
         new(ScenarioIcon.Sofa, T("Sofa")),
@@ -1235,6 +1313,5 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private sealed record Choice(string Id, string Name);
     private sealed record IntChoice(int? Value, string Name);
-    private sealed record IconChoice(ScenarioIcon Value, string Name);
     private sealed record StartupChoice(Guid? Id, string Name);
 }
