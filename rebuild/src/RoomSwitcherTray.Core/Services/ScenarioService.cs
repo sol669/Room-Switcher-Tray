@@ -1,31 +1,42 @@
 namespace RoomSwitcherTray.Core.Services;
 
-public sealed class ScenarioService(SettingsStore settings, DisplayService displays, AudioService audio)
-    : ScenarioCoordinator(() => settings.Current, settings.Save, SettingsStore.Log,
-        new WindowsScenarioDevices(displays, audio));
-
-internal sealed class WindowsScenarioDevices(DisplayService displays, AudioService audio) : IScenarioDevices
+public sealed class ScenarioService(
+    SettingsStore settings,
+    DisplayService displays,
+    AudioService audio)
 {
-    public Task<DeviceSnapshot> CaptureAsync() => Task.Run(() =>
-    {
-        IReadOnlyList<DisplayDevice> screens = displays.GetKnownDisplays();
-        IReadOnlyList<ActiveDisplayStatus> active = displays.GetActiveDisplayStatuses();
-        IReadOnlyList<AudioDevice> endpoints = [];
-        bool audioReadFailed = false;
-        try { endpoints = AudioService.GetRenderDevices(); }
-        catch (Exception ex) { SettingsStore.Log(ex); audioReadFailed = true; }
-        AudioEndpointStatus? volume = null;
-        try { volume = audio.GetDefaultEndpointStatus(endpoints); }
-        catch (Exception ex) { SettingsStore.Log(ex); }
-        return new DeviceSnapshot(screens, endpoints, active, volume, audioReadFailed);
-    });
+    private readonly SemaphoreSlim _switchLock = new(1, 1);
 
-    public Task ApplyDisplaysAsync(IReadOnlyCollection<string> ids) =>
-        Task.Run(() => displays.ApplyDisplays(ids));
-
-    public void ApplyAudio(AudioDevice device, int? volume)
+    public async Task<ApplyResult> ApplyAsync(int slot)
     {
-        AudioService.SetDefault(device.Id);
-        if (volume.HasValue) AudioService.SetEndpointVolume(device.Id, volume.Value);
+        ScenarioDefinition? scenario = slot == 1
+            ? settings.Current.Scenario1
+            : settings.Current.Scenario2;
+        if (scenario?.IsComplete != true)
+            return new ApplyResult(false, "Сценарий не настроен.");
+
+        if (!await _switchLock.WaitAsync(0))
+            return new ApplyResult(false, "Переключение уже выполняется.");
+
+        try
+        {
+            await Task.Run(() => displays.ApplySingleDisplay(scenario.DisplayId));
+            // HDMI/DisplayPort audio endpoints often appear a few seconds after
+            // Windows has activated the corresponding display path.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
+            await audio.SetDefaultWhenAvailableAsync(scenario.AudioDeviceId, timeout.Token);
+            settings.Current.ActiveScenario = slot;
+            settings.Save();
+            return new ApplyResult(true, $"Сценарий «{scenario.Name}» применён.");
+        }
+        catch (Exception ex)
+        {
+            SettingsStore.Log(ex);
+            return new ApplyResult(false, ex.Message);
+        }
+        finally
+        {
+            _switchLock.Release();
+        }
     }
 }
