@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Stage a draft release after all checks pass
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -82,10 +87,12 @@ jobs:
             release/Room-Switcher-Tray-Setup-Self-Contained-v${{ env.APP_VERSION }}.exe
           if-no-files-found: error
       - name: Stage release for final verification
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release
         uses: softprops/action-gh-release@v2
         with:
           name: RoomSwitcher ${{ env.APP_VERSION }}
+          tag_name: v${{ env.APP_VERSION }}
+          target_commitish: ${{ github.sha }}
           body_path: rebuild/RELEASE-1.0.1.md
           draft: true
           files: |
