@@ -45,7 +45,7 @@ jobs:
       - name: Include compiled XAML resources in standard build
         shell: pwsh
         run: |
-          $buildRoot = Join-Path $env:GITHUB_WORKSPACE 'rebuild/src/RoomSwitcherTray.Core/bin/Release'
+          $buildRoot = Join-Path $env:GITHUB_WORKSPACE 'rebuild/src/RoomSwitcherTray.Core/bin'
           $appXbf = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter 'App.xbf' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
           $appPri = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter 'RoomSwitcherTray.pri' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
           if ($null -eq $appXbf -or $null -eq $appPri) { throw 'Compiled RoomSwitcher XAML resources were not found.' }
@@ -69,7 +69,7 @@ jobs:
       - name: Include compiled XAML resources in self-contained build
         shell: pwsh
         run: |
-          $buildRoot = Join-Path $env:GITHUB_WORKSPACE 'rebuild/src/RoomSwitcherTray.Core/bin/Release'
+          $buildRoot = Join-Path $env:GITHUB_WORKSPACE 'rebuild/src/RoomSwitcherTray.Core/bin'
           $appXbf = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter 'App.xbf' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
           $appPri = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter 'RoomSwitcherTray.pri' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
           if ($null -eq $appXbf -or $null -eq $appPri) { throw 'Compiled RoomSwitcher XAML resources were not found.' }
