@@ -2,6 +2,9 @@ namespace RoomSwitcherTray.Core.Services;
 
 public static class UiText
 {
+    public static string AudioLevel(AppSettings settings, AudioEndpointStatus audio) =>
+        audio.IsMuted ? Get(settings, "Muted") : $"{audio.VolumePercent}%";
+
     public static string Get(AppSettings settings, string key) => (settings.Language == AppLanguage.English, key) switch
     {
         (true, "Next") => "Next scenario",

@@ -167,6 +167,10 @@ public sealed class AudioService
                     ? device with { DisplayName = displayName }
                     : device with { DisplayName = null });
         IReadOnlyList<AudioDevice> visible = identified
+            .Where(device => device.State != AudioDeviceState.NotPresent || savedIds.Contains(device.Id) ||
+                device.Kind != AudioDeviceKind.Display || device.ContainerId is not Guid container ||
+                !displayNames.ContainsKey(container) ||
+                all.Count(other => other.ContainerId == container && other.IsActive) != 1)
             .GroupBy(device => device.Kind == AudioDeviceKind.Display && DeviceIdentity.IsDeviceContainer(device.ContainerId) &&
                 displayNames.ContainsKey(device.ContainerId!.Value) &&
                 !savedIds.Contains(device.Id) &&

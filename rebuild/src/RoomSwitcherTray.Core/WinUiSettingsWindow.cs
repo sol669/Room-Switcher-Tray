@@ -165,7 +165,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Desktop") => "Computer", (true, "Television") => "Television",
         (true, "Sofa") => "Sofa", (true, "Gamepad") => "Gamepad",
         (true, "Close") => "Close", (true, "Save") => "Save", (true, "Delete") => "Delete",
-        (true, "FooterVersion") => "RoomSwitcher 1.0.0",
+        (true, "FooterVersion") => "RoomSwitcher 1.0.1",
         (false, "Settings") => "Настройки", (false, "Scenarios") => "Сценарии",
         (false, "General") => "Основные", (false, "Devices") => "Имена устройств",
         (false, "NewScenario") => "Новый сценарий", (false, "StartupScenario") => "Сценарий при запуске",
@@ -190,12 +190,15 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Desktop") => "Компьютер", (false, "Television") => "Телевизор",
         (false, "Sofa") => "Диван", (false, "Gamepad") => "Геймпад",
         (false, "Close") => "Закрыть", (false, "Save") => "Сохранить", (false, "Delete") => "Удалить",
-        (false, "FooterVersion") => "RoomSwitcher 1.0.0",
+        (false, "FooterVersion") => "RoomSwitcher 1.0.1",
         _ => key
     };
 
     private void BuildShell()
     {
+        // A reused control must leave its old parent before rebuilding the visual tree.
+        if (_pageHost.Parent is Panel previousParent) previousParent.Children.Remove(_pageHost);
+        _root.Children.Clear();
         _navButtons.Clear();
         _root.RowDefinitions.Clear();
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -949,6 +952,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     {
         try
         {
+            SynchronizeAudioBindings(App.Scenarios.Snapshot);
             _settings.Current.DeviceAliases = new Dictionary<string, string>(_pendingAliases, StringComparer.OrdinalIgnoreCase);
             _settings.Save();
             ResetPendingAliases();
@@ -966,6 +970,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     private async Task<bool> SaveScenarioAsync()
     {
+        SynchronizeAudioBindings(App.Scenarios.Snapshot);
         if (_draft?.IsComplete != true || !_volumeInput.IsValid) return false;
         _draft.Name = _draft.Name.Trim();
         _draft.IconLetters = ScenarioDefinition.MakeIconLetters(_draft.IconLetters);
@@ -1232,6 +1237,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
 
     public void UpdateDeviceSnapshot(DeviceSnapshot snapshot)
     {
+        SynchronizeAudioBindings(snapshot);
         string fingerprint = string.Join("|", snapshot.Displays.Select(item => $"{item.Id}:{item.IsAvailable}:{item.Name}")) +
             string.Join("|", snapshot.Audio.Select(item => $"{item.Id}:{item.State}:{item.Name}"));
         if (_deviceFingerprint == fingerprint) return;
@@ -1245,6 +1251,19 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         object? focused = _root.XamlRoot is null ? null : FocusManager.GetFocusedElement(_root.XamlRoot);
         if (focused is TextBox or ComboBox || _loading) _deviceRefreshPending = true;
         else if (_currentPage != "general") ShowCurrentPage();
+    }
+
+    private void SynchronizeAudioBindings(DeviceSnapshot snapshot)
+    {
+        // Include the baseline: an automatic identity repair is not an unsaved user edit.
+        var drafts = _scenarios.ToList();
+        if (_draft is not null) drafts.Add(_draft);
+        if (_scenarioBaseline is not null) drafts.Add(_scenarioBaseline);
+        AudioEndpointMigration.Reconcile(new AppSettings
+        {
+            Scenarios = drafts,
+            DeviceAliases = _pendingAliases
+        }, snapshot);
     }
 
     private async Task LoadDevicesAsync(bool openNewScenario)

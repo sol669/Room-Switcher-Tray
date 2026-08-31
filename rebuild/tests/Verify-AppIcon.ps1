@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$PublishPath, [string]$ExpectedVersion = '1.0.0')
+param([Parameter(Mandatory)][string]$PublishPath, [string]$ExpectedVersion = '1.0.1')
 
 # Read icon files and executable resources only; never start the application.
 $ErrorActionPreference = 'Stop'

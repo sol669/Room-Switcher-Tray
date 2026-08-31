@@ -62,6 +62,8 @@ public static class ScenarioPolicy
     {
         if (snapshot.AudioReadFailed || string.IsNullOrWhiteSpace(scenario.AudioDeviceId)) return null;
         AudioDevice? exact = snapshot.Audio.FirstOrDefault(item => Same(item.Id, scenario.AudioDeviceId));
+        AudioDevice? replacement = AudioEndpointMigration.FindReplacement(scenario, snapshot);
+        if (replacement is not null) return replacement;
         // A disconnected/disabled endpoint must not resolve to a sibling output.
         if (exact is not null) return !activeOnly || exact.IsActive ? exact : null;
         if (!Guid.TryParse(scenario.AudioDeviceContainerId, out Guid container) ||

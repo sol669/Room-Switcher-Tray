@@ -51,6 +51,11 @@ internal static class AudioNamingTests
             "saved inactive endpoint is not hidden by an active sibling");
         visible = AudioService.GetVisibleRenderDevices([hdmi, hdmi with { Id = "second-active", IsDefault = false }], [screen]);
         Check(visible.Count == 2, "two active display outputs sharing a container are not merged");
+        var savedCurrent = new ScenarioDefinition { AudioDeviceId = hdmi.Id, AudioDeviceContainerId = physical.ToString() };
+        visible = AudioService.GetVisibleRenderDevices([old, hdmi], [screen], savedCurrent);
+        Check(visible.Count == 1 && visible[0].Id == hdmi.Id, "retired HDMI does not reappear after saved binding migration");
+        visible = AudioService.GetVisibleRenderDevices([old, hdmi, hdmi with { Id = "second-active" }], [screen], savedCurrent);
+        Check(visible.Count == 3, "ambiguous active successors do not hide historical endpoint");
         Console.WriteLine($"PASS: {checks} audio naming/visibility regressions (synthetic Deck and shared-container fixtures).");
     }
 }

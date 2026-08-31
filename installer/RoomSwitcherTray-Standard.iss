@@ -4,7 +4,7 @@
 #define AppURL "https://github.com/sol669/Room-Switcher-Tray"
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.0.1"
 #endif
 
 #ifndef PublishDir
@@ -33,7 +33,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 CloseApplications=yes
 RestartApplications=no
-AppMutex=sol669.RoomSwitcherTray.Singleton
+AppMutex=sol669.RoomSwitcherTray.Core.Singleton
 MinVersion=10.0.17763
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany={#AppPublisher}

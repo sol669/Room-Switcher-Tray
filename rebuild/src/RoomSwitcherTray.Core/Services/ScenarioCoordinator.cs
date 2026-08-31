@@ -73,10 +73,12 @@ public class ScenarioCoordinator : IDisposable
             Snapshot = fresh;
             HasSnapshot = true;
             _readError = false;
-            bool namesChanged = false;
             AppSettings settings = _settings();
+            bool namesChanged = AudioEndpointMigration.Reconcile(settings, fresh);
             foreach ((string id, string name) in fresh.Displays.Where(item => item.IsAvailable).Select(item => (item.Id, item.Name))
-                .Concat(fresh.Audio.Select(item => (item.Id, item.DisplayName ?? item.Name))))
+                .Concat(fresh.Audio.Where(item => item.State != AudioDeviceState.NotPresent ||
+                    settings.Scenarios.Any(scenario => ScenarioPolicy.Same(scenario.AudioDeviceId, item.Id)))
+                    .Select(item => (item.Id, item.Name))))
             {
                 if (string.IsNullOrWhiteSpace(name)) continue;
                 if (settings.KnownDeviceNames.GetValueOrDefault(id) == name) continue;
@@ -266,7 +268,8 @@ public class ScenarioCoordinator : IDisposable
     {
         ScenarioDefinition? current = _settings().Scenarios.FirstOrDefault(item => item.Id == pending.Id);
         return current is not null && current.DisplayIds.SequenceEqual(pending.DisplayIds, StringComparer.OrdinalIgnoreCase) &&
-            ScenarioPolicy.Same(current.AudioDeviceId, pending.AudioDeviceId) &&
+            (ScenarioPolicy.Same(current.AudioDeviceId, pending.AudioDeviceId) ||
+                ScenarioPolicy.Same(current.AudioDeviceId, AudioEndpointMigration.FindReplacement(pending, Snapshot)?.Id)) &&
             ScenarioPolicy.Same(current.AudioDeviceContainerId, pending.AudioDeviceContainerId) &&
             current.VolumePercent == pending.VolumePercent;
     }

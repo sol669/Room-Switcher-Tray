@@ -253,7 +253,7 @@ public sealed class TrayService : IDisposable
                     ? (english ? "Disabled in Windows" : "Отключено в Windows")
                     : device?.IsActive != true ? disconnected :
                         audio is null ? device.IsDefault ? (english ? "No data" : "Нет данных") : unused :
-                        audio.IsMuted ? $"{UiText.Get(_settings.Current, "Muted")} · {audio.VolumePercent}%" : $"{audio.VolumePercent}%";
+                        UiText.AudioLevel(_settings.Current, audio);
                 if (audio is not null)
                 {
                     _muteEndpointId = device!.Id;

@@ -446,6 +446,14 @@ Guid hdmiContainer = Guid.NewGuid();
     settings.ActiveScenarioId = null;
     Check(ScenarioPolicy.TrayOrder(settings).Select(item => item.Index).SequenceEqual([0, 1, 2]), "no active scenario retains saved menu order");
 }
+await AudioMigrationTests.Run();
+foreach (var language in new[] { AppLanguage.Russian, AppLanguage.English })
+{
+    var preferences = new AppSettings { Language = language };
+    Check(UiText.AudioLevel(preferences, new("output", 100, true)) == UiText.Get(preferences, "Muted"),
+        "muted tray status contains no percentage in either language");
+    Check(UiText.AudioLevel(preferences, new("output", 27, false)) == "27%", "unmuted tray status retains current percentage");
+}
 Console.WriteLine($"ALL {checks} CHECKS PASSED. No Windows devices or user settings were changed.");
 
 sealed class FakeDevices(DeviceSnapshot current) : IScenarioDevices
