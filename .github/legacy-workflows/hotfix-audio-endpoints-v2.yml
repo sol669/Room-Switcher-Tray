@@ -1,3 +1,4 @@
+# Historical workflow: archived outside Actions discovery; not for current releases.
 name: Fix Core Audio collection interface
 on:
   push:

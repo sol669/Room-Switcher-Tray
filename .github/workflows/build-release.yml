@@ -1,8 +1,6 @@
 name: Build Windows release
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       publish_release:
