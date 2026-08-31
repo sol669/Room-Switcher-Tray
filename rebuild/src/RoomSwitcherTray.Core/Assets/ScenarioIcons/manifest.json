@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "viewBox": [
+    0,
+    0,
+    32,
+    32
+  ],
+  "strokeWidth": 1.8,
+  "sizes": [
+    16,
+    20,
+    24,
+    32,
+    48,
+    64,
+    96
+  ],
+  "icons": [
+    {
+      "order": 1,
+      "id": "Television",
+      "name": "Телевизор",
+      "svg": "svg/Television.svg"
+    },
+    {
+      "order": 2,
+      "id": "Desktop",
+      "name": "Компьютер",
+      "svg": "svg/Desktop.svg"
+    },
+    {
+      "order": 3,
+      "id": "Laptop",
+      "name": "Ноутбук",
+      "svg": "svg/Laptop.svg"
+    },
+    {
+      "order": 4,
+      "id": "DualMonitors",
+      "name": "Два монитора",
+      "svg": "svg/DualMonitors.svg"
+    },
+    {
+      "order": 5,
+      "id": "LaptopAndMonitor",
+      "name": "Ноутбук и монитор",
+      "svg": "svg/LaptopAndMonitor.svg"
+    },
+    {
+      "order": 6,
+      "id": "TripleMonitors",
+      "name": "Три монитора",
+      "svg": "svg/TripleMonitors.svg"
+    },
+    {
+      "order": 7,
+      "id": "QuadMonitors",
+      "name": "Четыре монитора",
+      "svg": "svg/QuadMonitors.svg"
+    },
+    {
+      "order": 8,
+      "id": "Gamepad",
+      "name": "Геймпад",
+      "svg": "svg/Gamepad.svg"
+    },
+    {
+      "order": 9,
+      "id": "Sofa",
+      "name": "Диван",
+      "svg": "svg/Sofa.svg"
+    },
+    {
+      "order": 10,
+      "id": "Speakers",
+      "name": "Колонки",
+      "svg": "svg/Speakers.svg"
+    },
+    {
+      "order": 11,
+      "id": "Headphones",
+      "name": "Наушники",
+      "svg": "svg/Headphones.svg"
+    },
+    {
+      "order": 12,
+      "id": "Projector",
+      "name": "Проектор",
+      "svg": "svg/Projector.svg"
+    },
+    {
+      "order": 13,
+      "id": "Microphone",
+      "name": "Микрофон",
+      "svg": "svg/Microphone.svg"
+    },
+    {
+      "order": 14,
+      "id": "Webcam",
+      "name": "Веб-камера",
+      "svg": "svg/Webcam.svg"
+    },
+    {
+      "order": 15,
+      "id": "Deck",
+      "name": "Портативная консоль",
+      "svg": "svg/Deck.svg"
+    },
+    {
+      "order": 16,
+      "id": "DesktopAudio",
+      "name": "Компьютер и звук",
+      "svg": "svg/DesktopAudio.svg"
+    }
+  ]
+}

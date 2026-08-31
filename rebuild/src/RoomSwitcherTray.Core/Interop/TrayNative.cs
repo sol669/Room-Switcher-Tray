@@ -7,6 +7,11 @@ internal static class TrayNative
     internal const uint WM_APP = 0x8000;
     internal const uint WM_HOTKEY = 0x0312;
     internal const uint WM_WTSSESSION_CHANGE = 0x02B1;
+    internal const uint WM_DEVICECHANGE = 0x0219;
+    internal const uint WM_DISPLAYCHANGE = 0x007E;
+    internal const uint WM_POWERBROADCAST = 0x0218;
+    internal const uint WM_SETTINGCHANGE = 0x001A;
+    internal const uint WM_THEMECHANGED = 0x031A;
     internal const uint WM_LBUTTONDBLCLK = 0x0203;
     internal const uint WM_RBUTTONUP = 0x0205;
     internal const uint TPM_RIGHTBUTTON = 0x0002;
@@ -37,6 +42,14 @@ internal static class TrayNative
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct POINT { public int X; public int Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DEVICE_INTERFACE_FILTER
+    {
+        public uint Size, DeviceType, Reserved;
+        public Guid ClassGuid;
+        public short Name;
+    }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     internal struct WNDCLASSEX
@@ -90,6 +103,10 @@ internal static class TrayNative
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] internal static extern bool PostMessage(nint window, uint message, nuint wParam, nint lParam);
     [DllImport("user32.dll")] internal static extern bool DestroyIcon(nint icon);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern nint RegisterDeviceNotification(nint recipient, ref DEVICE_INTERFACE_FILTER filter, uint flags);
+    [DllImport("user32.dll")] internal static extern bool UnregisterDeviceNotification(nint notification);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern uint RegisterWindowMessage(string name);
     [DllImport("user32.dll")] internal static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll", SetLastError = true)] internal static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint virtualKey);
     [DllImport("user32.dll", SetLastError = true)] internal static extern bool UnregisterHotKey(nint window, int id);

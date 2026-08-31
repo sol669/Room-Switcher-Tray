@@ -13,6 +13,7 @@ public sealed class SettingsStore
 
     public AppSettings Current { get; private set; } = new();
     public bool IsConfigured => Current.Scenarios.Count > 0 && Current.Scenarios.All(s => s.IsComplete);
+    public event EventHandler? Saved;
 
     public void Load()
     {
@@ -34,6 +35,8 @@ public sealed class SettingsStore
 
     private void UpgradeLegacySettings()
     {
+        Current.KnownDeviceNames = new Dictionary<string, string>(Current.KnownDeviceNames ?? [], StringComparer.OrdinalIgnoreCase);
+        Current.DeviceAliases = new Dictionary<string, string>(Current.DeviceAliases ?? [], StringComparer.OrdinalIgnoreCase);
         if (Current.Scenarios.Count == 0)
         {
             if (Current.Scenario1 is not null) Current.Scenarios.Add(Current.Scenario1.Upgrade());
@@ -58,6 +61,7 @@ public sealed class SettingsStore
     {
         Directory.CreateDirectory(Folder);
         File.WriteAllText(FilePath, JsonSerializer.Serialize(Current, JsonOptions));
+        Saved?.Invoke(this, EventArgs.Empty);
     }
 
     public static void Log(Exception exception)

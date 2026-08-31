@@ -19,8 +19,7 @@ public sealed class ScenarioDefinition
         !string.IsNullOrWhiteSpace(Name) &&
         DisplayIds.Count is >= 1 and <= 4 &&
         DisplayIds.All(id => !string.IsNullOrWhiteSpace(id)) &&
-        DisplayIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() == DisplayIds.Count &&
-        !string.IsNullOrWhiteSpace(AudioDeviceId);
+        DisplayIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() == DisplayIds.Count;
 
     public ScenarioDefinition Clone() => new()
     {
@@ -55,7 +54,14 @@ public enum StartupScenarioMode
 public enum AppThemeMode { System, Light, Dark }
 public enum AppLanguage { Russian, English }
 // Letters deliberately keeps the old Automatic ordinal so existing settings migrate cleanly.
-public enum ScenarioIcon { Letters, Desktop, Television, Sofa, Gamepad }
+public enum ScenarioIcon
+{
+    // Values 0–4 are persisted in existing settings. Never reorder them.
+    Letters = 0, Desktop = 1, Television = 2, Sofa = 3, Gamepad = 4,
+    Laptop = 5, DualMonitors = 6, LaptopAndMonitor = 7, TripleMonitors = 8,
+    QuadMonitors = 9, Speakers = 10, Headphones = 11, Projector = 12,
+    Microphone = 13, Webcam = 14, Deck = 15, DesktopAudio = 16
+}
 
 public sealed class AppSettings
 {
@@ -66,6 +72,8 @@ public sealed class AppSettings
     public Guid? StartupScenarioId { get; set; }
     public HotKeyDefinition SwitchScenarioHotKey { get; set; } = HotKeyDefinition.Default;
     public Dictionary<string, string> DeviceAliases { get; set; } = [];
+    // Last observed system names survive physical disconnection. Never replace aliases.
+    public Dictionary<string, string> KnownDeviceNames { get; set; } = [];
     public AppThemeMode Theme { get; set; }
     public AppLanguage Language { get; set; }
 

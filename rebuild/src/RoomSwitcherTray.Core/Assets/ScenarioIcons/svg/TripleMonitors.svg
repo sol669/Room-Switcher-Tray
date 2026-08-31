@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 32 32" role="img" aria-labelledby="title"><title id="title">Три монитора</title><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="12" height="9" rx="1.25"/>
+    <rect x="18" y="3" width="12" height="9" rx="1.25"/>
+    <path d="M8 12v3 M5 15h6 M24 12v3 M21 15h6"/>
+    <rect x="10" y="18" width="12" height="9" rx="1.25"/>
+    <path d="M16 27v3 M13 30h6"/></g></svg>

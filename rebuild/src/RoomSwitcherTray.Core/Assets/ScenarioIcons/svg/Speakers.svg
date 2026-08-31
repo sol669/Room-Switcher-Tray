@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 32 32" role="img" aria-labelledby="title"><title id="title">Колонки</title><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4" width="10" height="24" rx="1.75"/>
+    <rect x="19" y="4" width="10" height="24" rx="1.75"/>
+    <circle cx="8" cy="11" r="2"/>
+    <circle cx="24" cy="11" r="2"/>
+    <circle cx="8" cy="21" r="3"/>
+    <circle cx="24" cy="21" r="3"/></g></svg>

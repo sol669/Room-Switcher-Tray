@@ -6,7 +6,10 @@ namespace RoomSwitcherTray.Core.Services;
 
 public sealed class DisplayService
 {
-    public IReadOnlyList<DisplayDevice> GetDisplays()
+    public IReadOnlyList<DisplayDevice> GetDisplays() => GetDisplays(false);
+    public IReadOnlyList<DisplayDevice> GetKnownDisplays() => GetDisplays(true);
+
+    private IReadOnlyList<DisplayDevice> GetDisplays(bool includeUnavailable)
     {
         DisplayNative.PATH_INFO[] paths = QueryPaths();
         var result = new Dictionary<string, DisplayDevice>(StringComparer.OrdinalIgnoreCase);
@@ -20,13 +23,15 @@ public sealed class DisplayService
 
             bool active = (path.flags & DisplayNative.DISPLAYCONFIG_PATH_ACTIVE) != 0;
             var device = new DisplayDevice(id, name, active,
-                path.targetInfo.targetAvailable || active, containerId);
-            if (!result.TryGetValue(id, out DisplayDevice? existing) || (!existing.IsActive && active))
+                path.targetInfo.targetAvailable, containerId);
+            if (!result.TryGetValue(id, out DisplayDevice? existing) ||
+                (!existing.IsAvailable && device.IsAvailable) ||
+                (existing.IsAvailable == device.IsAvailable && !existing.IsActive && active))
                 result[id] = device;
         }
 
         return result.Values
-            .Where(device => device.IsAvailable)
+            .Where(device => includeUnavailable || device.IsAvailable)
             .OrderByDescending(device => device.IsActive)
             .ThenBy(device => device.Name)
             .ToList();
@@ -46,6 +51,7 @@ public sealed class DisplayService
             StringComparer.OrdinalIgnoreCase);
         foreach (DisplayNative.PATH_INFO candidate in allPaths)
         {
+            if (!candidate.targetInfo.targetAvailable) continue;
             (string id, _, _) = GetIdentity(candidate.targetInfo.adapterId, candidate.targetInfo.id);
             if (string.IsNullOrWhiteSpace(id)) continue;
             if (!candidates.TryGetValue(id, out List<DisplayNative.PATH_INFO>? paths))

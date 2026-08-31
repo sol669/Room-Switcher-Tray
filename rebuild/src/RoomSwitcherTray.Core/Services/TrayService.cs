@@ -18,11 +18,19 @@ public sealed class TrayService : IDisposable
     private readonly TrayNative.WindowProcedure _windowProcedure;
     private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcher;
     private readonly Dictionary<uint, ActiveDisplayStatus> _hdrCommands = [];
+    private string? _muteEndpointId;
+    private Guid? _muteScenarioId;
     private nint _window;
     private nint _icon;
     private TrayNative.NOTIFYICONDATA _notifyData;
     private WinUiSettingsWindow? _settingsWindow;
     private bool _hotKeyRegistered;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _deviceTimer;
+    private AudioDeviceWatcher? _audioWatcher;
+    private nint _deviceNotification;
+    private uint _taskbarCreated;
+    private bool _disposed, _menuOpen, _deviceRefreshRunning;
+    private string? _lastIconKey;
 
     public TrayService(SettingsStore settings, ScenarioService scenarios)
     {
@@ -30,6 +38,12 @@ public sealed class TrayService : IDisposable
         _scenarios = scenarios;
         _windowProcedure = WindowProc;
         _dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _deviceTimer = _dispatcher.CreateTimer();
+        _deviceTimer.IsRepeating = false;
+        _deviceTimer.Interval = TimeSpan.FromMilliseconds(750);
+        _deviceTimer.Tick += async (_, _) => await RefreshDevicesAsync();
+        _settings.Saved += OnSettingsSaved;
+        _scenarios.Changed += OnScenarioChanged;
     }
 
     public void Initialize()
@@ -47,8 +61,18 @@ public sealed class TrayService : IDisposable
         _window = TrayNative.CreateWindowEx(0, className, "RoomSwitcher", 0,
             0, 0, 0, 0, nint.Zero, nint.Zero, instance, nint.Zero);
         TrayNative.WTSRegisterSessionNotification(_window, TrayNative.NOTIFY_FOR_THIS_SESSION);
+        _taskbarCreated = TrayNative.RegisterWindowMessage("TaskbarCreated");
+        var filter = new TrayNative.DEVICE_INTERFACE_FILTER
+        {
+            Size = (uint)Marshal.SizeOf<TrayNative.DEVICE_INTERFACE_FILTER>(), DeviceType = 5
+        };
+        _deviceNotification = TrayNative.RegisterDeviceNotification(_window, ref filter, 4);
+        if (_deviceNotification == nint.Zero)
+            SettingsStore.Log(new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
+        try { _audioWatcher = new AudioDeviceWatcher(() => _dispatcher.TryEnqueue(ScheduleDeviceRefresh)); }
+        catch (Exception ex) { SettingsStore.Log(ex); }
 
-        _icon = TrayIconFactory.Create(GetActiveScenario());
+        _icon = TrayIconFactory.Create(GetActiveScenario(), remote: IsRemoteSession);
         _notifyData = new TrayNative.NOTIFYICONDATA
         {
             cbSize = (uint)Marshal.SizeOf<TrayNative.NOTIFYICONDATA>(), hWnd = _window, uID = 1,
@@ -62,6 +86,7 @@ public sealed class TrayService : IDisposable
             hotKey.Modifiers | TrayNative.MOD_NOREPEAT, hotKey.VirtualKey);
         if (!_hotKeyRegistered)
             ShowNotification($"Не удалось назначить {FormatHotKey(hotKey)}: комбинация уже занята.", false);
+        ScheduleDeviceRefresh();
     }
 
     private nint WindowProc(nint window, uint message, nuint wParam, nint lParam)
@@ -83,21 +108,39 @@ public sealed class TrayService : IDisposable
             }
             if (message == TrayNative.WM_WTSSESSION_CHANGE)
             {
-                _dispatcher.TryEnqueue(Refresh);
+                _dispatcher.TryEnqueue(() =>
+                {
+                    if (IsRemoteSession) _scenarios.CancelAudioWait();
+                    _lastIconKey = null;
+                    Refresh();
+                    ScheduleDeviceRefresh();
+                });
                 return nint.Zero;
             }
+            if (message == TrayNative.WM_DEVICECHANGE || message == TrayNative.WM_DISPLAYCHANGE ||
+                message == TrayNative.WM_POWERBROADCAST)
+                _dispatcher.TryEnqueue(ScheduleDeviceRefresh);
+            if (message == TrayNative.WM_SETTINGCHANGE || message == TrayNative.WM_THEMECHANGED ||
+                (_taskbarCreated != 0 && message == _taskbarCreated))
+                _dispatcher.TryEnqueue(() => { _lastIconKey = null; Refresh(); });
         }
         catch (Exception ex) { SettingsStore.Log(ex); }
         return TrayNative.DefWindowProc(window, message, wParam, lParam);
     }
 
-    private void ShowMenu()
+    private async void ShowMenu()
     {
+        if (_disposed || _menuOpen) return;
+        _menuOpen = true;
+        await RefreshDevicesAsync();
+        if (_disposed) { _menuOpen = false; return; }
         NativeTheme.Apply(_window, _settings.Current.Theme);
         nint menu = TrayNative.CreatePopupMenu();
         try
         {
             _hdrCommands.Clear();
+            _muteEndpointId = null;
+            _muteScenarioId = null;
             if (IsRemoteSession)
             {
                 TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED, 0, UiText.Get(_settings.Current, "Remote"));
@@ -107,15 +150,16 @@ public sealed class TrayService : IDisposable
             }
             else if (_settings.IsConfigured)
             {
-                Guid? nextScenarioId = _settings.Current.Scenarios.Count > 1 ? GetNextScenario().Id : null;
-                foreach ((ScenarioDefinition scenario, int index) in _settings.Current.Scenarios.Select((item, index) => (item, index)))
+                Guid? nextScenarioId = GetNextScenario()?.Id;
+                foreach ((ScenarioDefinition scenario, int index) in ScenarioPolicy.TrayOrder(_settings.Current))
                 {
                     uint scenarioCommand = ScenarioCommandBase + (uint)index;
                     string label = scenario.Name;
                     if (scenario.Id == nextScenarioId)
                         label += $"\t{FormatHotKey(_settings.Current.SwitchScenarioHotKey)}";
-                    TrayNative.AppendMenu(menu, TrayNative.MF_STRING, scenarioCommand, label);
-                    if (_settings.Current.ActiveScenarioId == scenario.Id || _settings.Current.Scenarios.Count == 1)
+                    bool available = _scenarios.HasReliableSnapshot && ScenarioPolicy.CanApply(scenario, _scenarios.Snapshot);
+                    TrayNative.AppendMenu(menu, TrayNative.MF_STRING | (available ? 0 : TrayNative.MF_GRAYED), scenarioCommand, label);
+                    if (_settings.Current.ActiveScenarioId == scenario.Id)
                         TrayNative.SetMenuDefaultItem(menu, scenarioCommand, 0);
                 }
 
@@ -140,56 +184,92 @@ public sealed class TrayService : IDisposable
             TrayNative.PostMessage(_window, 0, 0, 0);
             _dispatcher.TryEnqueue(() => Execute(command));
         }
-        finally { TrayNative.DestroyMenu(menu); }
+        catch (Exception ex) { SettingsStore.Log(ex); }
+        finally { TrayNative.DestroyMenu(menu); _menuOpen = false; }
     }
 
     private void BuildStatusSection(nint menu, bool remoteSession)
     {
         bool added = false;
+        bool english = _settings.Current.Language == AppLanguage.English;
+        string disconnected = english ? "Not connected" : "Не подключён";
+        string unused = english ? "Not in use" : "Не используется";
         try
         {
-            IReadOnlyList<ActiveDisplayStatus> displays = remoteSession
-                ? App.Displays.GetActiveDisplayStatuses()
-                : GetActiveScenario() is ScenarioDefinition activeScenario
-                    ? App.Displays.GetActiveDisplayStatuses(activeScenario.DisplayIds) : [];
-            foreach (ActiveDisplayStatus rawDisplay in displays)
+            DeviceSnapshot snapshot = _scenarios.Snapshot;
+            if (remoteSession)
             {
-                ActiveDisplayStatus display = rawDisplay;
-                string resolution = display.Width > 0 && display.Height > 0
-                    ? $"{display.Width} × {display.Height}" : UiText.Get(_settings.Current, "UnknownResolution");
-                string displayName = remoteSession ? display.Name : DeviceAliasService.NameFor(_settings.Current, display.Id, display.Name);
-                string text = $"{displayName}\t{resolution} · {(remoteSession ? "SDR" : display.HdrEnabled ? "HDR" : "SDR")}";
-                if (!remoteSession && display.HdrSupported)
+                var active = App.Displays.GetActiveDisplayStatuses();
+                var endpoints = AudioService.GetRenderDevices();
+                snapshot = new DeviceSnapshot(
+                    active.Select(item => new DisplayDevice(item.Id, item.Name, true, true, null)).ToArray(),
+                    endpoints, active, App.Audio.GetDefaultEndpointStatus(endpoints));
+            }
+            ScenarioDefinition? scenario = GetActiveScenario();
+            ScenarioTrayDevices selected = ScenarioPolicy.TrayDevices(scenario, snapshot);
+            IEnumerable<string> displayIds = remoteSession
+                ? snapshot.Displays.Where(item => item.IsActive).Select(item => item.Id)
+                : selected.DisplayIds;
+            foreach (string id in displayIds)
+            {
+                DisplayDevice? device = snapshot.Displays.FirstOrDefault(item => ScenarioPolicy.Same(item.Id, id));
+                ActiveDisplayStatus? display = snapshot.ActiveDisplays.FirstOrDefault(item => ScenarioPolicy.Same(item.Id, id));
+                string name = remoteSession ? UiText.Get(_settings.Current, "RemoteDisplay") :
+                    ScenarioPolicy.Name(_settings.Current, snapshot, id, english ? "Monitor" : "Монитор");
+                string state = device?.IsAvailable != true ? disconnected : display is null ? unused :
+                    $"{display.Width} × {display.Height} · {(remoteSession ? "SDR" : display.HdrEnabled ? "HDR" : "SDR")}";
+                string text = $"{name}\t{state}";
+                if (!remoteSession && device?.IsAvailable == true && display?.HdrSupported == true)
                 {
                     uint command = HdrCommandBase + (uint)_hdrCommands.Count;
                     _hdrCommands[command] = display;
                     nint submenu = TrayNative.CreatePopupMenu();
                     TrayNative.AppendMenu(submenu, TrayNative.MF_STRING, command,
-                        display.HdrEnabled ? UiText.Get(_settings.Current, "DisableHdr") : UiText.Get(_settings.Current, "EnableHdr"));
+                        UiText.Get(_settings.Current, display.HdrEnabled ? "DisableHdr" : "EnableHdr"));
                     TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP, (nuint)submenu, text);
                 }
-                else TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED, 0, text);
+                else TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_GRAYED, 0, text);
                 added = true;
             }
 
-            AudioEndpointStatus? audio = App.Audio.GetDefaultEndpointStatus();
-            if (audio is not null)
+            var audioRows = new List<(string Id, AudioDevice? Device)>();
+            if (remoteSession)
             {
-                string level = audio.IsMuted ? $"{UiText.Get(_settings.Current, "Muted")} · {audio.VolumePercent}%" : $"{audio.VolumePercent}%";
-                nint submenu = TrayNative.CreatePopupMenu();
-                TrayNative.AppendMenu(submenu, TrayNative.MF_STRING |
-                    (audio.IsMuted ? TrayNative.MF_CHECKED : 0), MuteCommand, UiText.Get(_settings.Current, "Mute"));
-                string? audioId = App.Audio.GetDefaultEndpointId();
-                string audioName = remoteSession ? audio.Name : DeviceAliasService.NameFor(_settings.Current, audioId ?? string.Empty, audio.Name);
-                TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP,
-                    (nuint)submenu, $"{audioName}\t{level}");
+                // Remote-session controls are separate from local scenario configuration.
+                AudioDevice? remoteAudio = snapshot.Audio.FirstOrDefault(item => item.IsActive && item.IsDefault);
+                if (remoteAudio is not null) audioRows.Add((remoteAudio.Id, remoteAudio));
+            }
+            else if (selected.AudioId is not null) audioRows.Add((selected.AudioId, selected.Audio));
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach ((string id, AudioDevice? device) in audioRows)
+            {
+                if (!seen.Add(device?.Id ?? id)) continue;
+                string name = remoteSession ? device?.Name ?? id :
+                    ScenarioPolicy.Name(_settings.Current, snapshot, id, device?.DisplayName ?? device?.Name ??
+                        (english ? "Audio device" : "Аудиоустройство"));
+                AudioEndpointStatus? audio = device?.IsActive == true && device.IsDefault ? snapshot.DefaultAudio : null;
+                string state = snapshot.AudioReadFailed ? (english ? "No data" : "Нет данных") :
+                    device?.State == AudioDeviceState.Disabled
+                    ? (english ? "Disabled in Windows" : "Отключено в Windows")
+                    : device?.IsActive != true ? disconnected :
+                        audio is null ? device.IsDefault ? (english ? "No data" : "Нет данных") : unused :
+                        audio.IsMuted ? $"{UiText.Get(_settings.Current, "Muted")} · {audio.VolumePercent}%" : $"{audio.VolumePercent}%";
+                if (audio is not null)
+                {
+                    _muteEndpointId = device!.Id;
+                    _muteScenarioId = remoteSession ? null : scenario?.Id;
+                    nint submenu = TrayNative.CreatePopupMenu();
+                    TrayNative.AppendMenu(submenu, TrayNative.MF_STRING | (audio.IsMuted ? TrayNative.MF_CHECKED : 0),
+                        MuteCommand, UiText.Get(_settings.Current, "Mute"));
+                    TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP, (nuint)submenu, $"{name}\t{state}");
+                }
+                else TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_GRAYED, 0, $"{name}\t{state}");
                 added = true;
             }
         }
         catch (Exception ex) { SettingsStore.Log(ex); }
-        if (!added)
-            TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_DISABLED,
-                0, UiText.Get(_settings.Current, "NoDevices"));
+        if (!added) TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_GRAYED,
+            0, UiText.Get(_settings.Current, "NoDevices"));
     }
 
     private void Execute(uint command)
@@ -225,36 +305,46 @@ public sealed class TrayService : IDisposable
     {
         try
         {
-            AudioEndpointStatus? current = App.Audio.GetDefaultEndpointStatus();
-            if (current is null) throw new InvalidOperationException("Активное аудиоустройство не найдено.");
-            App.Audio.SetDefaultEndpointMuted(!current.IsMuted);
+            if (_muteEndpointId is null) return;
+            IReadOnlyList<AudioDevice> endpoints = AudioService.GetRenderDevices();
+            if (!IsRemoteSession)
+            {
+                ScenarioDefinition? scenario = GetActiveScenario();
+                if (scenario?.Id != _muteScenarioId || scenario is null) return;
+                var fresh = _scenarios.Snapshot with { Audio = endpoints, AudioReadFailed = false };
+                if (!ScenarioPolicy.Same(ScenarioPolicy.FindAudio(scenario, fresh)?.Id, _muteEndpointId)) return;
+            }
+            AudioDevice? device = endpoints.FirstOrDefault(item => item.IsActive && ScenarioPolicy.Same(item.Id, _muteEndpointId));
+            if (device is null) return;
+            AudioEndpointStatus current = AudioService.GetEndpointStatus(device);
+            // Bind the action to the row's endpoint even if Windows changes its default while the menu is open.
+            AudioService.SetEndpointMuted(device.Id, !current.IsMuted);
             ShowNotification(current.IsMuted ? "Звук включён." : "Звук выключен.", true);
         }
         catch (Exception ex) { SettingsStore.Log(ex); ShowNotification($"Не удалось изменить звук: {ex.Message}", false); }
     }
 
-    private void ApplyNext()
+    private async void ApplyNext()
     {
         if (IsRemoteSession) return;
-        if (_settings.Current.Scenarios.Count < 2) { ShowSettings(openNewScenario: true); return; }
-        _ = ApplyAsync(GetNextScenario().Id);
+        if (_settings.Current.Scenarios.Count == 0) { ShowSettings(openNewScenario: true); return; }
+        await RefreshDevicesAsync();
+        if (GetNextScenario() is ScenarioDefinition next) await ApplyAsync(next.Id);
     }
 
     private void HandleShortcutAction() => ApplyNext();
 
-    private ScenarioDefinition GetNextScenario()
-    {
-        int activeIndex = _settings.Current.Scenarios.FindIndex(s => s.Id == _settings.Current.ActiveScenarioId);
-        return _settings.Current.Scenarios[activeIndex < 0 ? 0 : (activeIndex + 1) % _settings.Current.Scenarios.Count];
-    }
+    private ScenarioDefinition? GetNextScenario() => _scenarios.HasReliableSnapshot
+        ? ScenarioPolicy.Next(_settings.Current, _scenarios.Snapshot) : null;
 
     private ScenarioDefinition? GetActiveScenario() => _settings.Current.ActiveScenarioId is Guid id
         ? _settings.Current.Scenarios.FirstOrDefault(scenario => scenario.Id == id) : null;
 
     private async Task ApplyAsync(Guid scenarioId)
     {
-        ApplyResult result = await _scenarios.ApplyAsync(scenarioId);
-        ShowNotification(result.Message, result.Success);
+        if (IsRemoteSession || _disposed) return;
+        await _scenarios.ApplyAsync(scenarioId);
+        // Persistent monochrome warning + tooltip replace repeated balloon errors.
         Refresh();
     }
 
@@ -294,27 +384,78 @@ public sealed class TrayService : IDisposable
         }
     }
 
+    private void OnSettingsSaved(object? sender, EventArgs args)
+    {
+        _scenarios.SettingsChanged();
+        // Refresh from the committed settings, regardless of which page saved them.
+        // Queue after the save handler so icon-only edits never need an Apply action.
+        _dispatcher.TryEnqueue(() =>
+        {
+            try { Refresh(); }
+            catch (Exception ex) { SettingsStore.Log(ex); }
+        });
+    }
+
     internal void Refresh()
     {
-        nint replacement = TrayIconFactory.Create(GetActiveScenario());
-        nint previous = _icon;
-        _icon = replacement;
-        _notifyData.szTip = BuildTooltip();
-        _notifyData.hIcon = replacement;
-        _notifyData.uFlags = TrayNative.NIF_TIP | TrayNative.NIF_ICON;
-        if (TrayNative.Shell_NotifyIcon(TrayNative.NIM_MODIFY, ref _notifyData))
+        if (_window == nint.Zero || _disposed) return;
+        ScenarioDefinition? scenario = _scenarios.DesiredScenario;
+        bool remote = IsRemoteSession;
+        bool warning = !remote && _scenarios.Status.Warn;
+        string tooltip = BuildTooltip();
+        string key = $"{remote}|{warning}|{scenario?.Icon}|{scenario?.IconLetters}|{scenario?.Name}|{tooltip}";
+        if (key == _lastIconKey) return;
+        nint replacement = TrayIconFactory.Create(scenario?.Clone(), warning, remote);
+        var update = new TrayNative.NOTIFYICONDATA
         {
+            cbSize = (uint)Marshal.SizeOf<TrayNative.NOTIFYICONDATA>(), hWnd = _window, uID = 1,
+            uFlags = TrayNative.NIF_MESSAGE | TrayNative.NIF_TIP | TrayNative.NIF_ICON,
+            uCallbackMessage = TrayMessage, hIcon = replacement, szTip = tooltip,
+            szInfo = string.Empty, szInfoTitle = string.Empty
+        };
+        // Never reuse balloon-notification flags. If Explorer lost the icon,
+        // restore it; ordinary saves only modify the existing tray entry.
+        if (TrayNative.Shell_NotifyIcon(TrayNative.NIM_MODIFY, ref update) ||
+            TrayNative.Shell_NotifyIcon(TrayNative.NIM_ADD, ref update))
+        {
+            nint previous = _icon;
+            _icon = replacement;
+            _notifyData = update;
+            _lastIconKey = key;
             if (previous != nint.Zero) TrayNative.DestroyIcon(previous);
         }
         else
         {
             TrayNative.DestroyIcon(replacement);
-            _icon = previous;
-            _notifyData.hIcon = previous;
+            SettingsStore.Log(new InvalidOperationException("Windows did not accept the updated scenario tray icon."));
         }
     }
 
-    private string BuildTooltip() => IsRemoteSession ? UiText.Get(_settings.Current, "Remote") : GetActiveScenario()?.Name ?? "RoomSwitcher";
+    private string BuildTooltip() => IsRemoteSession ? UiText.Get(_settings.Current, "Remote") :
+        ScenarioPolicy.Tooltip(_scenarios.DesiredScenario, _scenarios.Status, _settings.Current.Language == AppLanguage.English);
+
+    private void OnScenarioChanged(object? sender, EventArgs args) => Refresh();
+
+    private void ScheduleDeviceRefresh()
+    {
+        if (_disposed) return;
+        _deviceTimer.Stop();
+        _deviceTimer.Start();
+    }
+
+    private async Task RefreshDevicesAsync()
+    {
+        if (_disposed || IsRemoteSession || _scenarios.IsApplying) return;
+        if (_deviceRefreshRunning) { ScheduleDeviceRefresh(); return; }
+        _deviceRefreshRunning = true;
+        try
+        {
+            await _scenarios.RefreshAsync();
+            if (!_disposed) _settingsWindow?.UpdateDeviceSnapshot(_scenarios.Snapshot);
+        }
+        catch (Exception ex) { SettingsStore.Log(ex); }
+        finally { _deviceRefreshRunning = false; }
+    }
 
     private static bool IsRemoteSession => TrayNative.GetSystemMetrics(TrayNative.SM_REMOTESESSION) != 0;
 
@@ -353,6 +494,14 @@ public sealed class TrayService : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
+        _deviceTimer.Stop();
+        _audioWatcher?.Dispose();
+        _audioWatcher = null;
+        if (_deviceNotification != nint.Zero) TrayNative.UnregisterDeviceNotification(_deviceNotification);
+        _scenarios.Changed -= OnScenarioChanged;
+        _scenarios.Dispose();
+        _settings.Saved -= OnSettingsSaved;
         if (_window != nint.Zero)
         {
             if (_hotKeyRegistered) TrayNative.UnregisterHotKey(_window, SwitchHotKeyId);

@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using static RoomSwitcherTray.Core.Services.CoreAudioInterop;
+using PROPERTYKEY = RoomSwitcherTray.Core.Services.AudioPropertyKey;
 
 namespace RoomSwitcherTray.Core.Services;
 
@@ -51,12 +53,17 @@ public sealed class AudioService
         return Task.FromResult<IReadOnlyList<AudioDevice>>(GetRenderDevices());
     }
 
-    public AudioEndpointStatus? GetDefaultEndpointStatus()
+    public AudioEndpointStatus? GetDefaultEndpointStatus() => GetDefaultEndpointStatus(GetRenderDevices());
+
+    public AudioEndpointStatus? GetDefaultEndpointStatus(IReadOnlyList<AudioDevice> devices)
     {
-        IReadOnlyList<AudioDevice> devices = GetRenderDevices();
         AudioDevice? device = devices.FirstOrDefault(item => item.IsDefault && item.IsActive);
         if (device is null) return null;
+        return GetEndpointStatus(device);
+    }
 
+    public static AudioEndpointStatus GetEndpointStatus(AudioDevice device)
+    {
         IAudioEndpointVolume? volume = null;
         try
         {
@@ -80,7 +87,11 @@ public sealed class AudioService
         string? deviceId = GetRenderDevices().FirstOrDefault(item => item.IsDefault && item.IsActive)?.Id;
         if (string.IsNullOrWhiteSpace(deviceId))
             throw new InvalidOperationException("Активное аудиоустройство не найдено.");
+        SetEndpointMuted(deviceId, muted);
+    }
 
+    public static void SetEndpointMuted(string deviceId, bool muted)
+    {
         IAudioEndpointVolume? volume = null;
         try
         {
@@ -93,11 +104,15 @@ public sealed class AudioService
 
     public void SetDefaultEndpointVolume(int percent)
     {
-        percent = Math.Clamp(percent, 0, 100);
         string? deviceId = GetRenderDevices().FirstOrDefault(item => item.IsDefault && item.IsActive)?.Id;
         if (string.IsNullOrWhiteSpace(deviceId))
             throw new InvalidOperationException("Активное аудиоустройство не найдено.");
+        SetEndpointVolume(deviceId, percent);
+    }
 
+    public static void SetEndpointVolume(string deviceId, int percent)
+    {
+        percent = Math.Clamp(percent, 0, 100);
         IAudioEndpointVolume? volume = null;
         try
         {
@@ -117,11 +132,17 @@ public sealed class AudioService
     public Task<IReadOnlyList<AudioDevice>> GetVisibleRenderDevicesAsync(
         IReadOnlyCollection<DisplayDevice> displays,
         params ScenarioDefinition?[] scenarios)
+        => Task.FromResult(GetVisibleRenderDevices(GetRenderDevices(), displays, scenarios));
+
+    public static IReadOnlyList<AudioDevice> GetVisibleRenderDevices(
+        IReadOnlyList<AudioDevice> all, IReadOnlyCollection<DisplayDevice> displays,
+        params ScenarioDefinition?[] scenarios)
     {
-        IReadOnlyList<AudioDevice> all = GetRenderDevices();
         Dictionary<Guid, string> displayNames = displays
-            .Where(display => display.ContainerId.HasValue)
+            .Where(display => DeviceIdentity.IsDeviceContainer(display.ContainerId))
             .GroupBy(display => display.ContainerId!.Value)
+            .Where(group => group.Select(display => display.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1)
+            .Where(group => all.Where(device => device.ContainerId == group.Key).All(device => device.Kind == AudioDeviceKind.Display))
             .ToDictionary(group => group.Key, group => group.First().Name);
         var savedIds = scenarios
             .Where(scenario => scenario is not null)
@@ -131,23 +152,27 @@ public sealed class AudioService
         var savedContainers = scenarios
             .Where(scenario => scenario is not null)
             .Select(scenario => ParseContainerId(scenario!.AudioDeviceContainerId))
-            .Where(id => id.HasValue)
+            .Where(id => DeviceIdentity.IsDeviceContainer(id))
             .Select(id => id!.Value)
             .ToHashSet();
         foreach (AudioDevice savedDevice in all.Where(device => savedIds.Contains(device.Id)))
         {
-            if (savedDevice.ContainerId.HasValue)
-                savedContainers.Add(savedDevice.ContainerId.Value);
+            if (DeviceIdentity.IsDeviceContainer(savedDevice.ContainerId))
+                savedContainers.Add(savedDevice.ContainerId!.Value);
         }
 
         IEnumerable<AudioDevice> identified = all
-            .Select(device => device.ContainerId is Guid containerId &&
+            .Select(device => device.Kind == AudioDeviceKind.Display && device.ContainerId is Guid containerId &&
                 displayNames.TryGetValue(containerId, out string? displayName)
                     ? device with { DisplayName = displayName }
-                    : device);
+                    : device with { DisplayName = null });
         IReadOnlyList<AudioDevice> visible = identified
-            .GroupBy(device => device.Kind == AudioDeviceKind.Display && device.ContainerId.HasValue
-                ? $"display:{device.ContainerId.Value:D}"
+            .GroupBy(device => device.Kind == AudioDeviceKind.Display && DeviceIdentity.IsDeviceContainer(device.ContainerId) &&
+                displayNames.ContainsKey(device.ContainerId!.Value) &&
+                !savedIds.Contains(device.Id) &&
+                all.Count(other => other.ContainerId == device.ContainerId && other.IsActive) <= 1 &&
+                all.Where(other => other.ContainerId == device.ContainerId).All(other => other.Kind == AudioDeviceKind.Display)
+                ? $"display:{device.ContainerId!.Value:D}"
                 : $"endpoint:{device.Id}", StringComparer.OrdinalIgnoreCase)
             .Select(group => group
                 .OrderByDescending(device => device.IsActive)
@@ -163,7 +188,7 @@ public sealed class AudioService
             .ThenBy(device => device.DisplayName ?? device.Name,
                 StringComparer.CurrentCultureIgnoreCase)
             .ToList();
-        return Task.FromResult(visible);
+        return visible;
     }
 
     private static int StateOrder(AudioDeviceState state) => state switch
@@ -193,13 +218,13 @@ public sealed class AudioService
         return device.State != AudioDeviceState.NotPresent;
     }
 
-    private static IReadOnlyList<AudioDevice> GetRenderDevices()
+    public static IReadOnlyList<AudioDevice> GetRenderDevices()
     {
         IMMDeviceEnumerator? enumerator = null;
         IMMDeviceCollection? collection = null;
         try
         {
-            enumerator = (IMMDeviceEnumerator)(object)new MMDeviceEnumeratorComObject();
+            enumerator = CreateEnumerator();
             string defaultId = GetDefaultId(enumerator);
             ThrowIfFailed(enumerator.EnumAudioEndpoints(EDataFlow.Render, DeviceStateMaskAll, out collection));
             ThrowIfFailed(collection.GetCount(out uint count));
@@ -248,36 +273,6 @@ public sealed class AudioService
         }
     }
 
-    public async Task<AudioDevice> SetDefaultWhenAvailableAsync(
-        string deviceId,
-        string containerId,
-        CancellationToken cancellationToken)
-    {
-        Guid? configuredContainer = ParseContainerId(containerId);
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            IReadOnlyList<AudioDevice> devices = GetRenderDevices();
-            AudioDevice? device = devices.FirstOrDefault(item =>
-                item.IsActive && item.Id.Equals(deviceId, StringComparison.OrdinalIgnoreCase));
-            if (device is null && configuredContainer.HasValue)
-            {
-                List<AudioDevice> matches = devices.Where(item =>
-                    item.IsActive && item.ContainerId == configuredContainer).ToList();
-                device = matches.Count == 1 ? matches[0] :
-                    matches.Where(item => item.Kind == AudioDeviceKind.Display).Take(2).Count() == 1
-                        ? matches.First(item => item.Kind == AudioDeviceKind.Display)
-                        : null;
-            }
-            if (device is not null)
-            {
-                SetDefault(device.Id);
-                return device;
-            }
-
-            await Task.Delay(250, cancellationToken);
-        }
-    }
 
     private static Guid? ParseContainerId(string? value) =>
         Guid.TryParse(value, out Guid result) ? result : null;
@@ -394,7 +389,7 @@ public sealed class AudioService
         _ => AudioDeviceState.NotPresent
     };
 
-    private static void SetDefault(string deviceId)
+    public static void SetDefault(string deviceId)
     {
         IPolicyConfig policy = (IPolicyConfig)(object)new PolicyConfigClient();
         try
@@ -408,35 +403,9 @@ public sealed class AudioService
         }
     }
 
-    private static void Release(object? value)
-    {
-        if (value is not null && Marshal.IsComObject(value))
-            Marshal.FinalReleaseComObject(value);
-    }
-
     private static void ThrowIfFailed(int result)
     {
         if (result < 0) Marshal.ThrowExceptionForHR(result);
-    }
-
-    private enum EDataFlow { Render, Capture, All }
-    private enum ERole { Console, Multimedia, Communications }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PROPERTYKEY
-    {
-        public Guid fmtid;
-        public uint pid;
-    }
-
-    // PROPVARIANT is 24 bytes in this x64 build. A 16-byte declaration lets
-    // IPropertyStore overwrite adjacent managed memory for some property types.
-    [StructLayout(LayoutKind.Explicit, Size = 24)]
-    private struct PROPVARIANT
-    {
-        [FieldOffset(0)] public ushort vt;
-        [FieldOffset(8)] public nint pointerValue;
-        [FieldOffset(8)] public uint uintValue;
     }
 
     private static IAudioEndpointVolume ActivateEndpointVolume(string deviceId)
@@ -445,7 +414,7 @@ public sealed class AudioService
         IMMDevice? device = null;
         try
         {
-            enumerator = (IMMDeviceEnumerator)(object)new MMDeviceEnumeratorComObject();
+            enumerator = CreateEnumerator();
             ThrowIfFailed(enumerator.GetDevice(deviceId, out device));
             Guid iid = typeof(IAudioEndpointVolume).GUID;
             ThrowIfFailed(device.Activate(ref iid, 23, nint.Zero, out nint instance));
@@ -457,45 +426,6 @@ public sealed class AudioService
             Release(device);
             Release(enumerator);
         }
-    }
-
-    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    private sealed class MMDeviceEnumeratorComObject { }
-
-    [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IMMDeviceEnumerator
-    {
-        [PreserveSig] int EnumAudioEndpoints(EDataFlow dataFlow, uint stateMask, out IMMDeviceCollection devices);
-        [PreserveSig] int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice device);
-        [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
-        [PreserveSig] int RegisterEndpointNotificationCallback(nint client);
-        [PreserveSig] int UnregisterEndpointNotificationCallback(nint client);
-    }
-
-    [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IMMDeviceCollection
-    {
-        [PreserveSig] int GetCount(out uint count);
-        [PreserveSig] int Item(uint index, out IMMDevice device);
-    }
-
-    [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IMMDevice
-    {
-        [PreserveSig] int Activate(ref Guid iid, uint context, nint activationParams, out nint instance);
-        [PreserveSig] int OpenPropertyStore(uint access, out IPropertyStore properties);
-        [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
-        [PreserveSig] int GetState(out uint state);
-    }
-
-    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IPropertyStore
-    {
-        [PreserveSig] int GetCount(out uint count);
-        [PreserveSig] int GetAt(uint index, out PROPERTYKEY key);
-        [PreserveSig] int GetValue(ref PROPERTYKEY key, out PROPVARIANT value);
-        [PreserveSig] int SetValue(ref PROPERTYKEY key, ref PROPVARIANT value);
-        [PreserveSig] int Commit();
     }
 
     [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

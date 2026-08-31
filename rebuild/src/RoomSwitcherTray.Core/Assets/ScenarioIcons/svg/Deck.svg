@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 32 32" role="img" aria-labelledby="title"><title id="title">Портативная консоль</title><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="7.5" width="28" height="17" rx="4"/>
+    <rect x="9.5" y="10.5" width="13" height="11" rx=".5"/>
+    <path d="M5.75 11.5v4 M3.75 13.5h4"/>
+    <circle cx="5.75" cy="19.75" r="1.2"/>
+    <circle cx="26.25" cy="19.75" r="1.2"/>
+    <circle cx="26.25" cy="11.5" r=".7" fill="currentColor" stroke="none"/>
+    <circle cx="28" cy="13.5" r=".7" fill="currentColor" stroke="none"/>
+    <circle cx="26.25" cy="15.5" r=".7" fill="currentColor" stroke="none"/>
+    <circle cx="24.5" cy="13.5" r=".7" fill="currentColor" stroke="none"/></g></svg>
