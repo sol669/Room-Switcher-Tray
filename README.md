@@ -3,7 +3,7 @@
 RoomSwitcher is a native Windows 10/11 tray utility for switching a
 complete display and audio setup with one click.
 
-The current Core test build (`0.7.2`) supports:
+RoomSwitcher 1.0.0 supports:
 
 - user-defined scenarios;
 - stable display and Core Audio endpoint identifiers;
@@ -46,7 +46,8 @@ does not expose a supported public API for changing the default endpoint.
 
 ## Status
 
-Hardware validation with multiple physical displays and audio endpoints is
-required before the first stable release.
+Version 1.0.0 is the first stable release. The project is still intentionally
+conservative about unavailable hardware: it never substitutes a different
+audio output merely because it shares an ambiguous Windows container identity.
 
 Author: [sol669](https://github.com/sol669)

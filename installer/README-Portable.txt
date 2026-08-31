@@ -1,4 +1,4 @@
-Room Switcher Tray Portable 0.1.1
+RoomSwitcher Portable 1.0.0
 =================================
 
 This is the standard compact portable build.

@@ -4,7 +4,7 @@
 #define AppURL "https://github.com/sol669/Room-Switcher-Tray"
 
 #ifndef AppVersion
-  #define AppVersion "0.1.1"
+  #define AppVersion "1.0.0"
 #endif
 
 #ifndef PublishDir

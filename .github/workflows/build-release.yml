@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  APP_VERSION: 0.1.1
-  PROJECT: src/RoomSwitcherTray/RoomSwitcherTray.csproj
+  APP_VERSION: 1.0.0
+  PROJECT: rebuild/src/RoomSwitcherTray.Core/RoomSwitcherTray.Core.csproj
 
 jobs:
   build:
@@ -42,6 +42,16 @@ jobs:
           -p:WindowsAppSDKSelfContained=false
           -o publish
 
+      - name: Include compiled XAML resources in standard build
+        shell: pwsh
+        run: |
+          $buildRoot = Join-Path $env:GITHUB_WORKSPACE 'rebuild/src/RoomSwitcherTray.Core/bin/Release'
+          $appXbf = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter 'App.xbf' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          $appPri = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter 'RoomSwitcherTray.pri' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          if ($null -eq $appXbf -or $null -eq $appPri) { throw 'Compiled RoomSwitcher XAML resources were not found.' }
+          Copy-Item -LiteralPath $appXbf.FullName -Destination publish -Force
+          Copy-Item -LiteralPath $appPri.FullName -Destination publish -Force
+
       - name: Create standard portable ZIP
         shell: pwsh
         run: |
@@ -55,6 +65,16 @@ jobs:
           -p:Platform=x64
           -p:WindowsAppSDKSelfContained=true
           -o publish-self-contained
+
+      - name: Include compiled XAML resources in self-contained build
+        shell: pwsh
+        run: |
+          $buildRoot = Join-Path $env:GITHUB_WORKSPACE 'rebuild/src/RoomSwitcherTray.Core/bin/Release'
+          $appXbf = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter 'App.xbf' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          $appPri = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter 'RoomSwitcherTray.pri' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          if ($null -eq $appXbf -or $null -eq $appPri) { throw 'Compiled RoomSwitcher XAML resources were not found.' }
+          Copy-Item -LiteralPath $appXbf.FullName -Destination publish-self-contained -Force
+          Copy-Item -LiteralPath $appPri.FullName -Destination publish-self-contained -Force
 
       - name: Create self-contained portable ZIP
         shell: pwsh
@@ -84,6 +104,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          name: RoomSwitcher 1.0.0
+          body_path: rebuild/RELEASE-1.0.0.md
           files: |
             Room-Switcher-Tray-Portable-win-x64.zip
             Room-Switcher-Tray-Portable-Self-Contained-win-x64.zip

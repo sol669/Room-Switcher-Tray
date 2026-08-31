@@ -1,4 +1,4 @@
-name: Build Core v0.11.3
+name: Build Core v1.0.0
 
 on:
   push:
@@ -34,7 +34,7 @@ jobs:
       - name: Test audio naming without accessing hardware
         run: dotnet run --project rebuild/tests/AudioInteropTests/AudioInteropTests.csproj -c Release --no-build -- --policy-only
 
-      - name: Publish self-contained Core v0.11.3
+      - name: Publish self-contained Core v1.0.0
         run: >-
           dotnet publish rebuild/src/RoomSwitcherTray.Core/RoomSwitcherTray.Core.csproj
           -c Release
@@ -69,10 +69,10 @@ jobs:
           ./rebuild/tests/Verify-AppIcon.ps1 -PublishPath ./artifacts/Room-Switcher-Tray-Core
           ./rebuild/tests/Verify-StateIcons.ps1 -AssemblyPath ./artifacts/Room-Switcher-Tray-Core/RoomSwitcherTray.dll -PreviewPath ./artifacts/state-icons.png
 
-      - name: Upload full Core v0.11.3
+      - name: Upload full Core v1.0.0
         uses: actions/upload-artifact@v4
         with:
-          name: RoomSwitcher-Core-v0.11.3-win-x64
+          name: RoomSwitcher-Core-v1.0.0-win-x64
           path: artifacts/Room-Switcher-Tray-Core/**
           if-no-files-found: error
           compression-level: 9
@@ -94,10 +94,10 @@ jobs:
             Copy-Item -LiteralPath $assets -Destination $target -Recurse
           }
 
-      - name: Upload update package v0.11.3
+      - name: Upload update package v1.0.0
         uses: actions/upload-artifact@v4
         with:
-          name: RoomSwitcher-Update-v0.11.3-win-x64
+          name: RoomSwitcher-Update-v1.0.0-win-x64
           path: artifacts/Room-Switcher-Tray-Update/**
           if-no-files-found: error
           compression-level: 9
