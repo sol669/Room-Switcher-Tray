@@ -1,4 +1,4 @@
-RoomSwitcher Portable 1.0.1
+Cozy Roomswitch Portable 1.0.0
 =================================
 
 This is the standard compact portable build.
@@ -10,8 +10,9 @@ Requirements:
 The standard installer checks these components and downloads missing
 Microsoft runtimes. The portable build installs nothing.
 
-The Self-Contained build includes its runtime dependencies and can be used
-offline.
+The Offline edition includes the official installers in the Prerequisites
+folder. Run them only if the app does not start; the app folder itself stays
+compact.
 
-Project: https://github.com/sol669/Room-Switcher-Tray
+Project: https://github.com/sol669/Cozy-Roomswitch
 Author: sol669

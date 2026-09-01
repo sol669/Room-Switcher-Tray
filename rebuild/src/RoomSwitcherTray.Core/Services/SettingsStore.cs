@@ -5,9 +5,9 @@ namespace RoomSwitcherTray.Core.Services;
 
 public sealed class SettingsStore
 {
-    private static readonly string Folder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "sol669", "Room Switcher Tray", "CoreRebuild");
+    // Installed and portable editions keep all app-owned state beside the executable.
+    // The installer exposes only this Data folder as writable and removes it on uninstall.
+    private static readonly string Folder = Path.Combine(AppContext.BaseDirectory, "Data");
     private static readonly string FilePath = Path.Combine(Folder, "settings.json");
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -37,6 +37,10 @@ public sealed class SettingsStore
     {
         Current.KnownDeviceNames = new Dictionary<string, string>(Current.KnownDeviceNames ?? [], StringComparer.OrdinalIgnoreCase);
         Current.DeviceAliases = new Dictionary<string, string>(Current.DeviceAliases ?? [], StringComparer.OrdinalIgnoreCase);
+        Current.RetiredAudioDeviceIds = (Current.RetiredAudioDeviceIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         if (Current.Scenarios.Count == 0)
         {
             if (Current.Scenario1 is not null) Current.Scenarios.Add(Current.Scenario1.Upgrade());

@@ -1,11 +1,11 @@
 param([Parameter(Mandatory)][string]$PublishPath, [Parameter(Mandatory)][string]$ExpectedVersion, [Parameter(Mandatory)][bool]$SelfContained)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath $PublishPath).Path
-foreach ($name in @('RoomSwitcherTray.exe','RoomSwitcherTray.dll','RoomSwitcherTray.deps.json','RoomSwitcherTray.runtimeconfig.json','App.xbf','RoomSwitcherTray.pri','Assets/AppIcon/RoomSwitcher.ico','README-Portable.txt')) {
+foreach ($name in @('CozyRoomswitch.exe','CozyRoomswitch.dll','CozyRoomswitch.deps.json','CozyRoomswitch.runtimeconfig.json','App.xbf','CozyRoomswitch.pri','Assets/AppIcon/RoomSwitcher.ico','README-Portable.txt')) {
     $file = Get-Item -LiteralPath (Join-Path $root $name)
     if ($file.Length -eq 0) { throw "Empty required file: $name" }
 }
-$config = Get-Content -Raw -LiteralPath (Join-Path $root 'RoomSwitcherTray.runtimeconfig.json') | ConvertFrom-Json
+$config = Get-Content -Raw -LiteralPath (Join-Path $root 'CozyRoomswitch.runtimeconfig.json') | ConvertFrom-Json
 if ($SelfContained) {
     foreach ($name in @('coreclr.dll','hostfxr.dll','Microsoft.UI.Xaml.dll')) {
         if (-not (Test-Path -LiteralPath (Join-Path $root $name))) { throw "Missing offline runtime: $name" }

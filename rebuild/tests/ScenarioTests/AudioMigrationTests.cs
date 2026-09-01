@@ -26,12 +26,18 @@ internal static class AudioMigrationTests
             Check(settings.Scenarios.All(s => s.AudioDeviceId == "new" && s.VolumePercent == 100), "All bindings, no preset changes");
             Check(settings.DeviceAliases.GetValueOrDefault("new") == "My TV" && !settings.DeviceAliases.ContainsKey("old"), "Alias transferred once");
             Check(!settings.KnownDeviceNames.ContainsKey("old") && settings.KnownDeviceNames["new"] == fresh.Name, "Retired name removed");
+            Check(settings.RetiredAudioDeviceIds.SequenceEqual(["old"]), "Verified retired endpoint is remembered for the picker");
             Check(!AudioEndpointMigration.Reconcile(settings, state), "Migration is idempotent");
             Check(ScenarioPolicy.FindAudio(original, state)?.Id == "new", "In-flight clone resolves same successor");
         }
         var conflictingAlias = Settings(); conflictingAlias.DeviceAliases["new"] = "New custom name";
         AudioEndpointMigration.Reconcile(conflictingAlias, snapshot);
         Check(conflictingAlias.DeviceAliases["new"] == "New custom name", "Existing destination alias wins");
+        var crossScenario = Settings();
+        crossScenario.Scenarios[1].DisplayIds = ["other-screen"];
+        AudioEndpointMigration.Reconcile(crossScenario, snapshot);
+        Check(crossScenario.Scenarios.All(s => s.AudioDeviceId == "new"),
+            "one verified endpoint successor repairs every matching scenario binding");
         var blocked = new List<DeviceSnapshot>
         {
             snapshot with { AudioReadFailed = true },

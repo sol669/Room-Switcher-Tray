@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$PublishPath, [string]$ExpectedVersion = '1.0.1')
+param([Parameter(Mandatory)][string]$PublishPath, [string]$ExpectedVersion = '1.0.0')
 
 # Read icon files and executable resources only; never start the application.
 $ErrorActionPreference = 'Stop'
@@ -40,7 +40,7 @@ for ($i = 0; $i -lt $sizes.Count; $i++) {
         if ($pink -lt $size * $size * 0.15 -or $white -eq 0) { throw "Pink artwork or white R missing at $size." }
     } finally { $bitmap.Dispose(); $stream.Dispose() }
 }
-$exe = Join-Path $root 'RoomSwitcherTray.exe'
+$exe = Join-Path $root 'CozyRoomswitch.exe'
 $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe).ProductVersion
 if ($version -notlike "$ExpectedVersion*") { throw "Unexpected executable version $version" }
 $extracted = [Drawing.Icon]::ExtractAssociatedIcon($exe)

@@ -74,6 +74,9 @@ public sealed class AppSettings
     public Dictionary<string, string> DeviceAliases { get; set; } = [];
     // Last observed system names survive physical disconnection. Never replace aliases.
     public Dictionary<string, string> KnownDeviceNames { get; set; } = [];
+    // Endpoint IDs replaced by a verified HDMI/DisplayPort successor. They remain
+    // in scenario history for compatibility, but are not offered in the device picker.
+    public List<string> RetiredAudioDeviceIds { get; set; } = [];
     public AppThemeMode Theme { get; set; }
     public AppLanguage Language { get; set; }
 

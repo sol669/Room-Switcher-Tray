@@ -4,6 +4,10 @@ obj/
 publish/
 publish-self-contained/
 release/
+artifacts/
+local-release/
+installer/prerequisites/*.exe
+installer/prerequisites/*.msi
 .dotnet/
 *.user
 *.suo

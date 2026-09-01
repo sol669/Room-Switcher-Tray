@@ -132,7 +132,7 @@ public static class ScenarioPolicy
 
     public static string Tooltip(ScenarioDefinition? scenario, ScenarioStatus status, bool english)
     {
-        if (scenario is null) return "RoomSwitcher";
+        if (scenario is null) return "Cozy Roomswitch";
         string message = status.Health switch
         {
             ScenarioHealth.Checking => english ? "Switching scenario" : "Переключение сценария",

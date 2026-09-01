@@ -134,10 +134,21 @@ public sealed class AudioService
         params ScenarioDefinition?[] scenarios)
         => Task.FromResult(GetVisibleRenderDevices(GetRenderDevices(), displays, scenarios));
 
+    public Task<IReadOnlyList<AudioDevice>> GetVisibleRenderDevicesAsync(
+        IReadOnlyCollection<DisplayDevice> displays, IReadOnlyCollection<string> retiredDeviceIds,
+        params ScenarioDefinition?[] scenarios)
+        => Task.FromResult(GetVisibleRenderDevices(GetRenderDevices(), displays, retiredDeviceIds, scenarios));
+
     public static IReadOnlyList<AudioDevice> GetVisibleRenderDevices(
         IReadOnlyList<AudioDevice> all, IReadOnlyCollection<DisplayDevice> displays,
         params ScenarioDefinition?[] scenarios)
+        => GetVisibleRenderDevices(all, displays, [], scenarios);
+
+    public static IReadOnlyList<AudioDevice> GetVisibleRenderDevices(
+        IReadOnlyList<AudioDevice> all, IReadOnlyCollection<DisplayDevice> displays,
+        IReadOnlyCollection<string> retiredDeviceIds, params ScenarioDefinition?[] scenarios)
     {
+        var retiredIds = retiredDeviceIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         Dictionary<Guid, string> displayNames = displays
             .Where(display => DeviceIdentity.IsDeviceContainer(display.ContainerId))
             .GroupBy(display => display.ContainerId!.Value)
@@ -162,6 +173,7 @@ public sealed class AudioService
         }
 
         IEnumerable<AudioDevice> identified = all
+            .Where(device => !retiredIds.Contains(device.Id))
             .Select(device => device.Kind == AudioDeviceKind.Display && device.ContainerId is Guid containerId &&
                 displayNames.TryGetValue(containerId, out string? displayName)
                     ? device with { DisplayName = displayName }
@@ -170,12 +182,12 @@ public sealed class AudioService
             .Where(device => device.State != AudioDeviceState.NotPresent || savedIds.Contains(device.Id) ||
                 device.Kind != AudioDeviceKind.Display || device.ContainerId is not Guid container ||
                 !displayNames.ContainsKey(container) ||
-                all.Count(other => other.ContainerId == container && other.IsActive) != 1)
+                all.Count(other => !retiredIds.Contains(other.Id) && other.ContainerId == container && other.IsActive) != 1)
             .GroupBy(device => device.Kind == AudioDeviceKind.Display && DeviceIdentity.IsDeviceContainer(device.ContainerId) &&
                 displayNames.ContainsKey(device.ContainerId!.Value) &&
                 !savedIds.Contains(device.Id) &&
-                all.Count(other => other.ContainerId == device.ContainerId && other.IsActive) <= 1 &&
-                all.Where(other => other.ContainerId == device.ContainerId).All(other => other.Kind == AudioDeviceKind.Display)
+                all.Count(other => !retiredIds.Contains(other.Id) && other.ContainerId == device.ContainerId && other.IsActive) <= 1 &&
+                all.Where(other => !retiredIds.Contains(other.Id) && other.ContainerId == device.ContainerId).All(other => other.Kind == AudioDeviceKind.Display)
                 ? $"display:{device.ContainerId!.Value:D}"
                 : $"endpoint:{device.Id}", StringComparer.OrdinalIgnoreCase)
             .Select(group => group

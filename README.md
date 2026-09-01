@@ -1,4 +1,4 @@
-# RoomSwitcher
+# Cozy Roomswitch
 
 [Русский](#русский) · [English](#english)
 
@@ -6,7 +6,7 @@
 
 ## Русский
 
-**RoomSwitcher** — лёгкая утилита для Windows 10/11, которая переключает готовые сценарии рабочего места одним нажатием в системном трее или горячей клавишей.
+**Cozy Roomswitch** — лёгкая утилита для Windows 10/11, которая переключает готовые сценарии рабочего места одним нажатием в системном трее или горячей клавишей.
 
 Сценарий объединяет подключённые экраны, аудиоустройство и, при необходимости, стартовую громкость. Например: «Кабинет» с двумя мониторами и аудиокартой, «Гостиная» с телевизором или отдельный сценарий для ноутбука.
 
@@ -23,27 +23,27 @@
 
 ### Умное поведение при отключённых устройствах
 
-RoomSwitcher не считает звук препятствием для переключения сценария: если аудиоустройство временно отсутствует, доступная конфигурация экранов всё равно применяется.
+Cozy Roomswitch не считает звук препятствием для переключения сценария: если аудиоустройство временно отсутствует, доступная конфигурация экранов всё равно применяется.
 
 При этом утилита не подменяет отключённый аудиовыход случайным другим устройством Windows. В меню трея остаётся видно, что именно из сценария сейчас не подключено.
 
 ### Скачать
 
-Актуальная версия: [RoomSwitcher 1.0.1](https://github.com/sol669/Room-Switcher-Tray/releases/latest)
+Стабильная версия Cozy Roomswitch — 1.0.0.
 
 Для большинства пользователей рекомендуется:
 
-- `Room-Switcher-Tray-Setup-Self-Contained-v1.0.1.exe` — установщик со всеми необходимыми компонентами; подходит для установки без интернета.
+- `Cozy-Roomswitch-Setup-Offline-v1.0.0.exe` — установщик со всеми необходимыми компонентами; подходит для установки без интернета.
 
 Также доступны:
 
-- `Room-Switcher-Tray-Setup-v1.0.1.exe` — компактный установщик; при необходимости скачает официальные Microsoft .NET 8 и Windows App Runtime.
-- `Room-Switcher-Tray-Portable-Self-Contained-win-x64.zip` — переносная версия со всеми зависимостями.
-- `Room-Switcher-Tray-Portable-win-x64.zip` — компактная переносная версия; требует установленный .NET 8 и Windows App Runtime 2.3.
+- `Cozy-Roomswitch-Setup-v1.0.0.exe` — компактный установщик; при необходимости скачает официальные Microsoft .NET 8 и Windows App Runtime.
+- `Cozy-Roomswitch-Portable-Offline-v1.0.0-win-x64.zip` — portable-версия с официальными установщиками компонентов в папке `Prerequisites`.
+- `Cozy-Roomswitch-Portable-v1.0.0-win-x64.zip` — компактная portable-версия; требует установленный .NET 8 и Windows App Runtime 2.3.
 
-Перед обновлением завершите RoomSwitcher через пункт «Выход» в меню трея. Сценарии и настройки сохраняются отдельно и не удаляются.
+Перед обновлением завершите Cozy Roomswitch через пункт «Выход» в меню трея. Настройки хранятся в папке Data рядом с программой и удаляются вместе с ней.
 
-### Что RoomSwitcher не меняет
+### Что Cozy Roomswitch не меняет
 
 Утилита не управляет расположением экранов, разрешением, масштабом, ориентацией и частотой обновления — за это по-прежнему отвечают параметры Windows.
 
@@ -57,7 +57,7 @@ RoomSwitcher не считает звук препятствием для пер
 
 ## English
 
-**RoomSwitcher** is a lightweight Windows 10/11 utility for switching complete workspace scenarios from the system tray or with a hotkey.
+**Cozy Roomswitch** is a lightweight Windows 10/11 utility for switching complete workspace scenarios from the system tray or with a hotkey.
 
 A scenario combines connected displays, an audio output, and optionally a startup volume level. For example: an “Office” setup with two monitors and an audio interface, a “Living room” setup with a TV, or a laptop-only scenario.
 
@@ -74,29 +74,29 @@ A scenario combines connected displays, an audio output, and optionally a startu
 
 ### Safe behaviour when hardware changes
 
-RoomSwitcher does not treat a missing audio device as a reason to block an otherwise available display scenario.
+Cozy Roomswitch does not treat a missing audio device as a reason to block an otherwise available display scenario.
 
 At the same time, it never silently replaces an unavailable audio output with an unrelated Windows device. The tray menu clearly shows which device from the selected scenario is currently disconnected.
 
 ### Download
 
-Latest version: [RoomSwitcher 1.0.1](https://github.com/sol669/Room-Switcher-Tray/releases/latest)
+Cozy Roomswitch 1.0.0 is the stable release.
 
 Recommended for most users:
 
-- `Room-Switcher-Tray-Setup-Self-Contained-v1.0.1.exe` — installer with all required components included; suitable for offline installation.
+- `Cozy-Roomswitch-Setup-Offline-v1.0.0.exe` — installer with all required components included; suitable for offline installation.
 
 Other options:
 
-- `Room-Switcher-Tray-Setup-v1.0.1.exe` — compact installer; downloads official Microsoft .NET 8 and Windows App Runtime if needed.
-- `Room-Switcher-Tray-Portable-Self-Contained-win-x64.zip` — portable build with all dependencies included.
-- `Room-Switcher-Tray-Portable-win-x64.zip` — compact portable build; requires .NET 8 and Windows App Runtime 2.3.
+- `Cozy-Roomswitch-Setup-v1.0.0.exe` — compact installer; downloads official Microsoft .NET 8 and Windows App Runtime if needed.
+- `Cozy-Roomswitch-Portable-Offline-v1.0.0-win-x64.zip` — portable build with the official runtime installers in the `Prerequisites` folder.
+- `Cozy-Roomswitch-Portable-v1.0.0-win-x64.zip` — compact portable build; requires .NET 8 and Windows App Runtime 2.3.
 
-Before updating, exit RoomSwitcher from the tray menu. Your scenarios and settings are stored separately and are not removed during an update.
+Before updating, exit Cozy Roomswitch from the tray menu. Settings live in the Data folder beside the app and are removed with it.
 
-### What RoomSwitcher does not control
+### What Cozy Roomswitch does not control
 
-RoomSwitcher does not change display layout, resolution, scaling, orientation, or refresh rate. Those settings remain under Windows control.
+Cozy Roomswitch does not change display layout, resolution, scaling, orientation, or refresh rate. Those settings remain under Windows control.
 
 ### Requirements
 

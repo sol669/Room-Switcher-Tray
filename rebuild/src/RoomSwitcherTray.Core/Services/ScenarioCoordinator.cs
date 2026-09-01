@@ -195,11 +195,15 @@ public class ScenarioCoordinator : IDisposable
             if (saved is not null && (saved.AudioDeviceId != device.Id ||
                 !ScenarioPolicy.Same(saved.AudioDeviceContainerId, containerId)))
             {
+                string previousAudioId = saved.AudioDeviceId;
                 if (_settings().DeviceAliases.TryGetValue(saved.AudioDeviceId, out string? alias) &&
                     !_settings().DeviceAliases.ContainsKey(device.Id))
                     _settings().DeviceAliases[device.Id] = alias;
                 saved.AudioDeviceId = device.Id;
                 saved.AudioDeviceContainerId = containerId;
+                if (!ScenarioPolicy.Same(previousAudioId, device.Id) &&
+                    !_settings().RetiredAudioDeviceIds.Contains(previousAudioId, StringComparer.OrdinalIgnoreCase))
+                    _settings().RetiredAudioDeviceIds.Add(previousAudioId);
                 if (_pendingAudioScenario?.Id == scenario.Id) _pendingAudioScenario = saved.Clone();
                 SaveSafely();
             }

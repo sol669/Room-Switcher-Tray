@@ -390,7 +390,7 @@ Guid hdmiContainer = Guid.NewGuid();
         "Не удалось проверить устройства"), "query failure is not described as unplugging");
     Check(ScenarioPolicy.Tooltip(scenario, new(ScenarioHealth.Checking, ""), false).EndsWith("Переключение сценария"),
         "transition is described without an error warning");
-    Check(ScenarioPolicy.Tooltip(null, new(ScenarioHealth.None, ""), false) == "RoomSwitcher", "unconfigured tooltip keeps app name");
+    Check(ScenarioPolicy.Tooltip(null, new(ScenarioHealth.None, ""), false) == "Cozy Roomswitch", "unconfigured tooltip keeps app name");
     scenario.Name = new string('A', 62) + "😀" + new string('B', 40);
     string tip = ScenarioPolicy.Tooltip(scenario, new(ScenarioHealth.Failed, ""), false);
     Check(!tip.Contains('\uD83D') && tip.EndsWith("Не удалось применить сценарий") && tip.Length <= 127,

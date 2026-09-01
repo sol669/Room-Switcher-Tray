@@ -5,7 +5,7 @@ namespace RoomSwitcherTray.Core.Services;
 public static class StartupService
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "RoomSwitcher";
+    private const string ValueName = "Cozy Roomswitch";
 
     public static bool IsEnabled()
     {
@@ -24,7 +24,7 @@ public static class StartupService
         }
 
         string path = Environment.ProcessPath
-            ?? throw new InvalidOperationException("Не удалось определить путь к RoomSwitcher.");
+            ?? throw new InvalidOperationException("Не удалось определить путь к Cozy Roomswitch.");
         key.SetValue(ValueName, $"\"{path}\"");
     }
 }

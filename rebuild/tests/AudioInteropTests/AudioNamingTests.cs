@@ -56,6 +56,9 @@ internal static class AudioNamingTests
         Check(visible.Count == 1 && visible[0].Id == hdmi.Id, "retired HDMI does not reappear after saved binding migration");
         visible = AudioService.GetVisibleRenderDevices([old, hdmi, hdmi with { Id = "second-active" }], [screen], savedCurrent);
         Check(visible.Count == 3, "ambiguous active successors do not hide historical endpoint");
+        visible = AudioService.GetVisibleRenderDevices([old, hdmi], [screen], [old.Id], savedOld);
+        Check(visible.Count == 1 && visible[0].Id == hdmi.Id,
+            "a verified retired endpoint stays hidden even when an older scenario still references it");
         Console.WriteLine($"PASS: {checks} audio naming/visibility regressions (synthetic Deck and shared-container fixtures).");
     }
 }

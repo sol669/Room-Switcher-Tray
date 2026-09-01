@@ -1,10 +1,10 @@
-#define AppName "Room Switcher Tray"
-#define AppExeName "RoomSwitcherTray.exe"
+#define AppName "Cozy Roomswitch"
+#define AppExeName "CozyRoomswitch.exe"
 #define AppPublisher "sol669"
-#define AppURL "https://github.com/sol669/Room-Switcher-Tray"
+#define AppURL "https://github.com/sol669/Cozy-Roomswitch"
 
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.0.0"
 #endif
 
 #ifndef PublishDir
@@ -12,7 +12,7 @@
 #endif
 
 [Setup]
-AppId={{F8D6C9A8-E58A-4C3F-A5C9-85A5A86C7D31}
+AppId={{EDACA359-B3D4-4F05-B077-521D8BB4FDE1}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -23,7 +23,8 @@ DefaultDirName={autopf}\{#AppPublisher}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=..\release
-OutputBaseFilename=Room-Switcher-Tray-Setup-Self-Contained-v{#AppVersion}
+OutputBaseFilename=Cozy-Roomswitch-Setup-Offline-v{#AppVersion}
+SetupIconFile=..\rebuild\src\RoomSwitcherTray.Core\Assets\AppIcon\RoomSwitcher.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 WizardStyle=modern
 PrivilegesRequired=admin
@@ -33,11 +34,11 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 CloseApplications=yes
 RestartApplications=no
-AppMutex=sol669.RoomSwitcherTray.Core.Singleton
+AppMutex=sol669.CozyRoomswitch.Singleton
 MinVersion=10.0.17763
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany={#AppPublisher}
-VersionInfoDescription={#AppName} self-contained installer
+VersionInfoDescription={#AppName} offline installer
 VersionInfoProductName={#AppName}
 
 [Languages]
@@ -49,10 +50,41 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "prerequisites\windowsdesktop-runtime-8.0.30-win-x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall ignoreversion; Check: not IsDotNetDesktop8Installed
+Source: "prerequisites\WindowsAppRuntimeInstall-x64-2.3.1.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall ignoreversion; Check: not IsWindowsAppRuntimeInstalled
+
+[Dirs]
+Name: "{app}\Data"; Permissions: users-modify
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Cozy Roomswitch"; Flags: uninsdeletevalue
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\Assets\AppIcon\RoomSwitcher.ico"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\Assets\AppIcon\RoomSwitcher.ico"; Tasks: desktopicon
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\Data"
 
 [Run]
+Filename: "{tmp}\windowsdesktop-runtime-8.0.30-win-x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Установка Microsoft .NET Desktop Runtime..."; Flags: waituntilterminated; Check: not IsDotNetDesktop8Installed
+Filename: "{tmp}\WindowsAppRuntimeInstall-x64-2.3.1.exe"; Parameters: "--quiet"; StatusMsg: "Установка Windows App Runtime..."; Flags: waituntilterminated; Check: not IsWindowsAppRuntimeInstalled
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function IsDotNetDesktop8Installed: Boolean;
+var
+  FindRec: TFindRec;
+begin
+  Result := FindFirst(ExpandConstant('{autopf}\dotnet\shared\Microsoft.WindowsDesktop.App\8.*'), FindRec);
+  if Result then FindClose(FindRec);
+end;
+
+function IsWindowsAppRuntimeInstalled: Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if (Get-AppxPackage -Name ''Microsoft.WindowsAppRuntime.2.3'' -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;

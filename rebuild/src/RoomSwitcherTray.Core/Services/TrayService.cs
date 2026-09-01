@@ -48,7 +48,7 @@ public sealed class TrayService : IDisposable
 
     public void Initialize()
     {
-        const string className = "sol669.RoomSwitcher.Core.TrayWindow";
+        const string className = "sol669.CozyRoomswitch.TrayWindow";
         nint instance = TrayNative.GetModuleHandle(null);
         var windowClass = new TrayNative.WNDCLASSEX
         {
@@ -58,7 +58,7 @@ public sealed class TrayService : IDisposable
             lpszClassName = className
         };
         TrayNative.RegisterClassEx(ref windowClass);
-        _window = TrayNative.CreateWindowEx(0, className, "RoomSwitcher", 0,
+        _window = TrayNative.CreateWindowEx(0, className, "Cozy Roomswitch", 0,
             0, 0, 0, 0, nint.Zero, nint.Zero, instance, nint.Zero);
         TrayNative.WTSRegisterSessionNotification(_window, TrayNative.NOTIFY_FOR_THIS_SESSION);
         _taskbarCreated = TrayNative.RegisterWindowMessage("TaskbarCreated");
@@ -486,7 +486,7 @@ public sealed class TrayService : IDisposable
     private void ShowNotification(string message, bool success)
     {
         _notifyData.uFlags = TrayNative.NIF_INFO;
-        _notifyData.szInfoTitle = "RoomSwitcher";
+        _notifyData.szInfoTitle = "Cozy Roomswitch";
         _notifyData.szInfo = message;
         _notifyData.dwInfoFlags = success ? TrayNative.NIIF_INFO : TrayNative.NIIF_ERROR;
         TrayNative.Shell_NotifyIcon(TrayNative.NIM_MODIFY, ref _notifyData);

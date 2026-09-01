@@ -72,7 +72,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _root.IsTabStop = true;
         _pageHost.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         _pageHost.VerticalContentAlignment = VerticalAlignment.Stretch;
-        Title = "RoomSwitcher";
+        Title = "Cozy Roomswitch";
         try { SystemBackdrop = new MicaBackdrop(); } catch { }
 
         AppWindow appWindow = ConfigureWindow();
@@ -155,7 +155,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "DisplayName") => "Display name",
         (true, "ScenarioDisplays") => "Scenario displays", (true, "ScenarioAudio") => "Scenario audio devices",
         (true, "Monitors") => "Monitors", (true, "AudioDevices") => "Audio devices",
-        (true, "DeviceAlias") => "Name in RoomSwitcher", (true, "ScenarioName") => "Name the scenario",
+        (true, "DeviceAlias") => "Name in Cozy Roomswitch", (true, "ScenarioName") => "Name the scenario",
         (true, "ScenarioSettings") => "Scenario name and icon", (true, "Monitor") => "Monitor",
         (true, "Audio") => "Audio device", (true, "Volume") => "Volume",
         (true, "SetVolume") => "Set volume",
@@ -165,7 +165,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Desktop") => "Computer", (true, "Television") => "Television",
         (true, "Sofa") => "Sofa", (true, "Gamepad") => "Gamepad",
         (true, "Close") => "Close", (true, "Save") => "Save", (true, "Delete") => "Delete",
-        (true, "FooterVersion") => "RoomSwitcher 1.0.1",
+        (true, "FooterVersion") => "Cozy Roomswitch 1.0.0",
         (false, "Settings") => "Настройки", (false, "Scenarios") => "Сценарии",
         (false, "General") => "Основные", (false, "Devices") => "Имена устройств",
         (false, "NewScenario") => "Новый сценарий", (false, "StartupScenario") => "Сценарий при запуске",
@@ -180,7 +180,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "DisplayName") => "Отображаемое имя",
         (false, "ScenarioDisplays") => "Экраны сценария", (false, "ScenarioAudio") => "Аудиоустройства сценария",
         (false, "Monitors") => "Мониторы", (false, "AudioDevices") => "Аудиоустройства",
-        (false, "DeviceAlias") => "Имя в RoomSwitcher", (false, "ScenarioName") => "Назовите сценарий",
+        (false, "DeviceAlias") => "Имя в Cozy Roomswitch", (false, "ScenarioName") => "Назовите сценарий",
         (false, "ScenarioSettings") => "Имя и иконка сценария", (false, "Monitor") => "Монитор",
         (false, "Audio") => "Аудиоустройство", (false, "Volume") => "Громкость",
         (false, "SetVolume") => "Установить громкость",
@@ -190,7 +190,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Desktop") => "Компьютер", (false, "Television") => "Телевизор",
         (false, "Sofa") => "Диван", (false, "Gamepad") => "Геймпад",
         (false, "Close") => "Закрыть", (false, "Save") => "Сохранить", (false, "Delete") => "Удалить",
-        (false, "FooterVersion") => "RoomSwitcher 1.0.1",
+        (false, "FooterVersion") => "Cozy Roomswitch 1.0.0",
         _ => key
     };
 
@@ -226,7 +226,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         sourceLine.Children.Add(new HyperlinkButton
         {
             Content = "GitHub",
-            NavigateUri = new Uri("https://github.com/sol669/Room-Switcher-Tray"),
+            NavigateUri = new Uri("https://github.com/sol669/Cozy-Roomswitch"),
             Padding = new Thickness(0)
         });
         footerInfo.Children.Add(sourceLine);
@@ -1245,7 +1245,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _displays.Clear();
         _displays.AddRange(snapshot.Displays.Where(item => item.IsAvailable));
         _audio.Clear();
-        _audio.AddRange(AudioService.GetVisibleRenderDevices(snapshot.Audio, _displays, _scenarios.Cast<ScenarioDefinition?>().ToArray()));
+        _audio.AddRange(AudioService.GetVisibleRenderDevices(snapshot.Audio, _displays,
+            _settings.Current.RetiredAudioDeviceIds, _scenarios.Cast<ScenarioDefinition?>().ToArray()));
         _devicesLoaded = true;
         // Preserve an in-progress text edit or an open dropdown; rebuild on navigation/activation.
         object? focused = _root.XamlRoot is null ? null : FocusManager.GetFocusedElement(_root.XamlRoot);
@@ -1259,11 +1260,18 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         var drafts = _scenarios.ToList();
         if (_draft is not null) drafts.Add(_draft);
         if (_scenarioBaseline is not null) drafts.Add(_scenarioBaseline);
-        AudioEndpointMigration.Reconcile(new AppSettings
+        var reconciliation = new AppSettings
         {
             Scenarios = drafts,
-            DeviceAliases = _pendingAliases
-        }, snapshot);
+            DeviceAliases = _pendingAliases,
+            RetiredAudioDeviceIds = _settings.Current.RetiredAudioDeviceIds
+        };
+        if (AudioEndpointMigration.Reconcile(reconciliation, snapshot))
+        {
+            // Retirement is an automatic hardware-identity repair, not an editor change.
+            try { _settings.Save(); }
+            catch (Exception ex) { SettingsStore.Log(ex); }
+        }
     }
 
     private async Task LoadDevicesAsync(bool openNewScenario)
@@ -1275,7 +1283,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
                 _displays.Clear();
                 _displays.AddRange(await Task.Run(App.Displays.GetDisplays));
                 _audio.Clear();
-                _audio.AddRange(await App.Audio.GetVisibleRenderDevicesAsync(_displays, _scenarios.Cast<ScenarioDefinition?>().ToArray()));
+                _audio.AddRange(await App.Audio.GetVisibleRenderDevicesAsync(_displays,
+                    _settings.Current.RetiredAudioDeviceIds, _scenarios.Cast<ScenarioDefinition?>().ToArray()));
                 _devicesLoaded = true;
                 if (_currentPage is "devices" || _currentPage == "new" || _currentPage.StartsWith("scenario:", StringComparison.Ordinal))
                     ShowCurrentPage();

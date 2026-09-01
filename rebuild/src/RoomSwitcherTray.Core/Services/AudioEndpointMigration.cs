@@ -25,16 +25,28 @@ public static class AudioEndpointMigration
     {
         bool changed = false;
         var retired = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var replacements = new Dictionary<string, AudioDevice>(StringComparer.OrdinalIgnoreCase);
         foreach (ScenarioDefinition scenario in settings.Scenarios)
         {
             AudioDevice? replacement = FindReplacement(scenario, snapshot);
             if (replacement is null) continue;
             string oldId = scenario.AudioDeviceId;
+            replacements.TryAdd(oldId, replacement);
+        }
+        // An endpoint ID identifies the physical Windows audio endpoint, not a scenario.
+        // Once one scenario has safely proved its successor, repair every matching binding.
+        foreach ((string oldId, AudioDevice replacement) in replacements)
+        {
             if (settings.DeviceAliases.TryGetValue(oldId, out string? alias) &&
                 !settings.DeviceAliases.ContainsKey(replacement.Id)) settings.DeviceAliases[replacement.Id] = alias;
             settings.KnownDeviceNames[replacement.Id] = replacement.Name;
-            scenario.AudioDeviceId = replacement.Id;
-            scenario.AudioDeviceContainerId = replacement.ContainerId!.Value.ToString("D");
+            foreach (ScenarioDefinition scenario in settings.Scenarios.Where(item => ScenarioPolicy.Same(item.AudioDeviceId, oldId)))
+            {
+                scenario.AudioDeviceId = replacement.Id;
+                scenario.AudioDeviceContainerId = replacement.ContainerId!.Value.ToString("D");
+            }
+            if (!settings.RetiredAudioDeviceIds.Contains(oldId, StringComparer.OrdinalIgnoreCase))
+                settings.RetiredAudioDeviceIds.Add(oldId);
             retired.Add(oldId);
             changed = true;
         }

@@ -26,7 +26,7 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _singleInstance = new Mutex(true, "sol669.RoomSwitcherTray.Core.Singleton", out bool created);
+        _singleInstance = new Mutex(true, "sol669.CozyRoomswitch.Singleton", out bool created);
         if (!created)
         {
             Exit();
@@ -58,6 +58,7 @@ public partial class App : Application
     private void CreateLifetimeWindow()
     {
         _lifetimeWindow = new Window();
+        _lifetimeWindow.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon", "RoomSwitcher.ico"));
         _lifetimeWindow.AppWindow.IsShownInSwitchers = false;
         _lifetimeWindow.Activate();
         _lifetimeWindow.AppWindow.Hide();
