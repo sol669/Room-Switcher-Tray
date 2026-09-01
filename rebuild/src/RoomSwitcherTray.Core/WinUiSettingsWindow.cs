@@ -165,7 +165,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Desktop") => "Computer", (true, "Television") => "Television",
         (true, "Sofa") => "Sofa", (true, "Gamepad") => "Gamepad",
         (true, "Close") => "Close", (true, "Save") => "Save", (true, "Delete") => "Delete",
-        (true, "FooterVersion") => "Cozy Roomswitch 1.0.0",
+        (true, "FooterVersion") => "Cozy Roomswitch 1.0.1",
         (false, "Settings") => "Настройки", (false, "Scenarios") => "Сценарии",
         (false, "General") => "Основные", (false, "Devices") => "Имена устройств",
         (false, "NewScenario") => "Новый сценарий", (false, "StartupScenario") => "Сценарий при запуске",
@@ -190,7 +190,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Desktop") => "Компьютер", (false, "Television") => "Телевизор",
         (false, "Sofa") => "Диван", (false, "Gamepad") => "Геймпад",
         (false, "Close") => "Закрыть", (false, "Save") => "Сохранить", (false, "Delete") => "Удалить",
-        (false, "FooterVersion") => "Cozy Roomswitch 1.0.0",
+        (false, "FooterVersion") => "Cozy Roomswitch 1.0.1",
         _ => key
     };
 

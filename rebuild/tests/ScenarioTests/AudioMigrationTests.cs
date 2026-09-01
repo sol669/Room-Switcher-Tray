@@ -38,6 +38,15 @@ internal static class AudioMigrationTests
         AudioEndpointMigration.Reconcile(crossScenario, snapshot);
         Check(crossScenario.Scenarios.All(s => s.AudioDeviceId == "new"),
             "one verified endpoint successor repairs every matching scenario binding");
+        var cleanInstall = Settings();
+        cleanInstall.Scenarios.ForEach(s => { s.AudioDeviceId = "new"; s.AudioDeviceContainerId = container.ToString(); });
+        cleanInstall.DeviceAliases["old"] = "Old TV";
+        cleanInstall.KnownDeviceNames["old"] = "Old TV";
+        var staleSibling = old with { State = AudioDeviceState.Unplugged };
+        Check(AudioEndpointMigration.Reconcile(cleanInstall, snapshot with { Audio = [staleSibling, fresh] }),
+            "A verified live HDMI endpoint retires its old unplugged sibling after a clean install");
+        Check(cleanInstall.RetiredAudioDeviceIds.Contains("old") && !cleanInstall.DeviceAliases.ContainsKey("old") &&
+            !cleanInstall.KnownDeviceNames.ContainsKey("old"), "Retired sibling is removed from future pickers and name cache");
         var blocked = new List<DeviceSnapshot>
         {
             snapshot with { AudioReadFailed = true },
