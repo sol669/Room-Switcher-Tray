@@ -17,6 +17,9 @@ public sealed class ScenarioIconView : UserControl
     public static readonly DependencyProperty LettersProperty = DependencyProperty.Register(
         nameof(Letters), typeof(string), typeof(ScenarioIconView),
         new PropertyMetadata("AB", OnArtworkChanged));
+    public static readonly DependencyProperty RemoteProperty = DependencyProperty.Register(
+        nameof(Remote), typeof(bool), typeof(ScenarioIconView),
+        new PropertyMetadata(false, OnArtworkChanged));
     public ScenarioIcon Icon
     {
         get => (ScenarioIcon)GetValue(IconProperty);
@@ -26,6 +29,11 @@ public sealed class ScenarioIconView : UserControl
     {
         get => (string)GetValue(LettersProperty);
         set => SetValue(LettersProperty, value);
+    }
+    public bool Remote
+    {
+        get => (bool)GetValue(RemoteProperty);
+        set => SetValue(RemoteProperty, value);
     }
 
     private readonly Image _image = new() { Stretch = Stretch.Uniform };
@@ -67,8 +75,9 @@ public sealed class ScenarioIconView : UserControl
     private void UpdateArtwork()
     {
         Windows.UI.Color color = (Foreground as SolidColorBrush)?.Color ?? Microsoft.UI.Colors.White;
-        using var bitmap = ScenarioArtwork.Render(Icon, Letters,
-            System.Drawing.Color.FromArgb(color.A, color.R, color.G, color.B), 96);
+        System.Drawing.Color artworkColor = System.Drawing.Color.FromArgb(color.A, color.R, color.G, color.B);
+        using var bitmap = Remote ? ScenarioArtwork.RenderRemote(artworkColor, 96) :
+            ScenarioArtwork.Render(Icon, Letters, artworkColor, 96);
         var source = new WriteableBitmap(96, 96);
         BitmapData data = bitmap.LockBits(new System.Drawing.Rectangle(0, 0, 96, 96),
             ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);

@@ -39,6 +39,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private Button? _hotKeyCaptureButton;
     private TextBlock? _autostartState;
     private ToggleSwitch? _autostartToggle;
+    private TextBlock? _adaptiveRemoteState;
+    private ToggleSwitch? _adaptiveRemoteToggle;
     private ComboBox? _startupChoiceBox;
     private ScenarioDefinition? _draft;
     private ScenarioDefinition? _scenarioBaseline;
@@ -54,6 +56,9 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private bool _allowClose;
     private bool _dialogOpen;
     private bool _pendingStartWithWindows;
+    private bool _pendingAdaptiveRemoteSession;
+    private int _pendingRemoteVolume;
+    private StartupVolumeInput _remoteVolumeInput = new(100);
     private StartupScenarioMode _pendingStartupMode;
     private Guid? _pendingStartupScenarioId;
     private AppThemeMode _pendingTheme;
@@ -68,6 +73,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _tray = tray;
         _scenarios = settings.Current.Scenarios.Select(item => item.Clone()).ToList();
         ResetPendingGeneral();
+        ResetPendingRemote();
         ResetPendingAliases();
         _root.IsTabStop = true;
         _pageHost.HorizontalContentAlignment = HorizontalAlignment.Stretch;
@@ -148,6 +154,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Change") => "Change…", (true, "Autostart") => "Autostart",
         (true, "Theme") => "Theme", (true, "Language") => "Language",
         (true, "Behavior") => "Behavior", (true, "System") => "System",
+        (true, "AdaptiveRemoteSession") => "Adaptive remote session",
+        (true, "RemoteSession") => "Remote session", (true, "RemoteAudioVolume") => "Remote audio volume",
         (true, "DisplaySettings") => "Display settings", (true, "SoundSettings") => "Sound settings",
         (true, "Open") => "Open…",
         (true, "WindowsSettings") => "Windows settings",
@@ -165,7 +173,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (true, "Desktop") => "Computer", (true, "Television") => "Television",
         (true, "Sofa") => "Sofa", (true, "Gamepad") => "Gamepad",
         (true, "Close") => "Close", (true, "Save") => "Save", (true, "Delete") => "Delete",
-        (true, "FooterVersion") => "Cozy Roomswitch 1.0.1",
+        (true, "FooterVersion") => "Cozy Roomswitch 1.0.3",
         (false, "Settings") => "Настройки", (false, "Scenarios") => "Сценарии",
         (false, "General") => "Основные", (false, "Devices") => "Имена устройств",
         (false, "NewScenario") => "Новый сценарий", (false, "StartupScenario") => "Сценарий при запуске",
@@ -173,6 +181,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Change") => "Изменить…", (false, "Autostart") => "Автозапуск",
         (false, "Theme") => "Тема", (false, "Language") => "Язык",
         (false, "Behavior") => "Поведение", (false, "System") => "Система",
+        (false, "AdaptiveRemoteSession") => "Адаптивный удаленный сеанс",
+        (false, "RemoteSession") => "Удаленный сеанс", (false, "RemoteAudioVolume") => "Громкость удаленного аудио",
         (false, "DisplaySettings") => "Параметры экрана", (false, "SoundSettings") => "Параметры звука",
         (false, "Open") => "Открыть…",
         (false, "WindowsSettings") => "Параметры Windows",
@@ -190,7 +200,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         (false, "Desktop") => "Компьютер", (false, "Television") => "Телевизор",
         (false, "Sofa") => "Диван", (false, "Gamepad") => "Геймпад",
         (false, "Close") => "Закрыть", (false, "Save") => "Сохранить", (false, "Delete") => "Удалить",
-        (false, "FooterVersion") => "Cozy Roomswitch 1.0.1",
+        (false, "FooterVersion") => "Cozy Roomswitch 1.0.3",
         _ => key
     };
 
@@ -334,8 +344,25 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         if (_scenarioNavPanel is null) return;
         foreach (string key in _navButtons.Keys.Where(key => key.StartsWith("scenario:", StringComparison.Ordinal)).ToList())
             _navButtons.Remove(key);
+        _navButtons.Remove("remote");
         _navButtons.Remove("new");
         _scenarioNavPanel.Children.Clear();
+        if (_settings.Current.AdaptiveRemoteSession)
+        {
+            Button remote = NavButton(T("RemoteSession"), "remote");
+            remote.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            var remoteContent = new Grid { ColumnSpacing = 12 };
+            remoteContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            remoteContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+            remoteContent.Children.Add(new TextBlock { Text = T("RemoteSession"), VerticalAlignment = VerticalAlignment.Center });
+            var remoteIcon = new ScenarioIconView { Remote = true, VerticalAlignment = VerticalAlignment.Center };
+            remoteIcon.SetBinding(Control.ForegroundProperty, new Binding { Source = remote, Path = new PropertyPath(nameof(Control.Foreground)) });
+            Grid.SetColumn(remoteIcon, 1);
+            remoteContent.Children.Add(remoteIcon);
+            remote.Content = remoteContent;
+            AutomationProperties.SetName(remote, T("RemoteSession"));
+            _scenarioNavPanel.Children.Add(remote);
+        }
         foreach (ScenarioDefinition scenario in _scenarios)
         {
             string page = ScenarioPage(scenario.Id);
@@ -382,6 +409,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _capturingHotKey = false;
         if (page == "general") ResetPendingGeneral();
         else if (page == "devices") ResetPendingAliases();
+        else if (page == "remote") ResetPendingRemote();
         else if (page == "new") CreateNewDraft();
         else if (TryScenarioId(page, out Guid id)) LoadScenarioDraft(id);
         ShowCurrentPage();
@@ -395,6 +423,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _pageHost.Content = _currentPage switch
         {
             "devices" => BuildDevicesPage(),
+            "remote" => BuildRemotePage(),
             "new" => BuildScenarioPage(),
             _ when _currentPage.StartsWith("scenario:", StringComparison.Ordinal) => BuildScenarioPage(),
             _ => BuildGeneralPage()
@@ -442,6 +471,22 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         panel.Children.Add(SettingRow(_hotKeyTitle, _hotKeyCaptureButton));
         _hotKeyHint = new TextBlock { Opacity = .68, Margin = new Thickness(14, 0, 0, 0), Visibility = Visibility.Collapsed };
         panel.Children.Add(_hotKeyHint);
+
+        _adaptiveRemoteToggle = new ToggleSwitch
+        {
+            IsOn = _pendingAdaptiveRemoteSession, MinWidth = 0, Width = 44,
+            OffContent = string.Empty, OnContent = string.Empty, VerticalAlignment = VerticalAlignment.Center
+        };
+        _adaptiveRemoteState = new TextBlock { MinWidth = 58, TextAlignment = TextAlignment.Right, Opacity = .72, VerticalAlignment = VerticalAlignment.Center };
+        _adaptiveRemoteToggle.Toggled += (_, _) =>
+        {
+            UpdateAdaptiveRemoteState();
+            if (_loading) return;
+            _pendingAdaptiveRemoteSession = _adaptiveRemoteToggle.IsOn;
+            UpdateFooterState();
+        };
+        UpdateAdaptiveRemoteState();
+        panel.Children.Add(ToggleSettingRow(T("AdaptiveRemoteSession"), _adaptiveRemoteState, _adaptiveRemoteToggle));
 
         panel.Children.Add(HeaderCell(T("System")));
 
@@ -496,6 +541,28 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         panel.Children.Add(HeaderCell(T("WindowsSettings")));
         panel.Children.Add(SystemSettingsRow(T("DisplaySettings"), "ms-settings:display"));
         panel.Children.Add(SystemSettingsRow(T("SoundSettings"), "ms-settings:sound"));
+        FinishInitialLoading(panel);
+        return PageScroll(panel);
+    }
+
+    private UIElement BuildRemotePage()
+    {
+        _loading = true;
+        StackPanel panel = PagePanel();
+        panel.Children.Add(TitleSpacerCell());
+        panel.Children.Add(HeaderCell(T("RemoteSession")));
+        TextBox volume = SettingsTextBox(new TextBox { Text = _remoteVolumeInput.Text, PlaceholderText = "0–100" });
+        volume.InputScope = new InputScope { Names = { new InputScopeName { NameValue = InputScopeNameValue.Number } } };
+        volume.TextChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _remoteVolumeInput.Text = volume.Text;
+            if (_remoteVolumeInput.IsValid) _pendingRemoteVolume = _remoteVolumeInput.Value ?? 100;
+            volume.BorderBrush = _remoteVolumeInput.IsValid ? null : ThemeBrush("SystemFillColorCriticalBrush", Colors.Red);
+            volume.BorderThickness = _remoteVolumeInput.IsValid ? new Thickness(0) : new Thickness(1);
+            UpdateFooterState();
+        };
+        panel.Children.Add(SettingRow(T("RemoteAudioVolume"), volume));
         FinishInitialLoading(panel);
         return PageScroll(panel);
     }
@@ -891,6 +958,12 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         _autostartState.Text = _autostartToggle.IsOn ? (English ? "On" : "Вкл.") : (English ? "Off" : "Откл.");
     }
 
+    private void UpdateAdaptiveRemoteState()
+    {
+        if (_adaptiveRemoteState is null || _adaptiveRemoteToggle is null) return;
+        _adaptiveRemoteState.Text = _adaptiveRemoteToggle.IsOn ? (English ? "On" : "Вкл.") : (English ? "Off" : "Откл.");
+    }
+
     private void UpdateFooterState()
     {
         if (_saveButton is not null)
@@ -900,12 +973,14 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
                 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private bool CanSaveCurrentPage() => !IsScenarioPage || _draft?.IsComplete == true && _volumeInput.IsValid;
+    private bool CanSaveCurrentPage() => _currentPage == "remote" ? _remoteVolumeInput.IsValid :
+        !IsScenarioPage || _draft?.IsComplete == true && _volumeInput.IsValid;
 
     private bool HasCurrentChanges() => _currentPage switch
     {
         "general" => HasUnsavedGeneralChanges(),
         "devices" => HasUnsavedAliasChanges(),
+        "remote" => _remoteVolumeInput.IsValid && _pendingRemoteVolume != _settings.Current.RemoteSessionVolumePercent,
         _ when IsScenarioPage => _draft is not null && (_draftIsNew || !_volumeInput.IsValid || !ScenarioEquals(_draft, _scenarioBaseline)),
         _ => false
     };
@@ -917,6 +992,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         if (!CanSaveCurrentPage()) return false;
         if (_currentPage == "general") return SaveGeneral();
         if (_currentPage == "devices") return SaveAliases();
+        if (_currentPage == "remote") return SaveRemote();
         if (IsScenarioPage) return await SaveScenarioAsync();
         return false;
     }
@@ -929,6 +1005,8 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
                 _pendingLanguage != _settings.Current.Language;
             StartupService.SetEnabled(_pendingStartWithWindows);
             _settings.Current.StartWithWindows = _pendingStartWithWindows;
+            bool remoteModeChanged = _pendingAdaptiveRemoteSession != _settings.Current.AdaptiveRemoteSession;
+            _settings.Current.AdaptiveRemoteSession = _pendingAdaptiveRemoteSession;
             _settings.Current.StartupScenarioMode = _pendingStartupMode;
             _settings.Current.StartupScenarioId = _pendingStartupScenarioId;
             _settings.Current.Theme = _pendingTheme;
@@ -937,7 +1015,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             _settings.Save();
             ResetPendingGeneral();
             if (appearanceChanged) BuildShell();
-            else { ApplyTheme(); RefreshNavigationSelection(); UpdateFooterState(); }
+            else { if (remoteModeChanged) RebuildScenarioNavigation(); ApplyTheme(); RefreshNavigationSelection(); UpdateFooterState(); }
             return true;
         }
         catch (Exception ex)
@@ -946,6 +1024,16 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
             UpdateFooterState();
             return false;
         }
+    }
+
+    private bool SaveRemote()
+    {
+        if (!_remoteVolumeInput.IsValid) return false;
+        _settings.Current.RemoteSessionVolumePercent = Math.Clamp(_pendingRemoteVolume, 0, 100);
+        _settings.Save();
+        ResetPendingRemote();
+        UpdateFooterState();
+        return true;
     }
 
     private bool SaveAliases()
@@ -1280,6 +1368,15 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
         {
             try
             {
+                // RDP endpoints are transient session infrastructure, never user devices.
+                // Do not display, alias or remember them in the device-name page.
+                if (TrayService.IsRemoteSession)
+                {
+                    _devicesLoaded = true;
+                    if (_currentPage == "devices") ShowCurrentPage();
+                    if (openNewScenario) await RequestNavigateAsync("new");
+                    return;
+                }
                 _displays.Clear();
                 _displays.AddRange(await Task.Run(App.Displays.GetDisplays));
                 _audio.Clear();
@@ -1297,11 +1394,18 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     private void ResetPendingGeneral()
     {
         _pendingStartWithWindows = _settings.Current.StartWithWindows;
+        _pendingAdaptiveRemoteSession = _settings.Current.AdaptiveRemoteSession;
         _pendingStartupMode = _settings.Current.StartupScenarioMode;
         _pendingStartupScenarioId = _settings.Current.StartupScenarioId;
         _pendingTheme = _settings.Current.Theme;
         _pendingLanguage = _settings.Current.Language;
         _pendingHotKey = CloneHotKey(_settings.Current.SwitchScenarioHotKey);
+    }
+
+    private void ResetPendingRemote()
+    {
+        _pendingRemoteVolume = Math.Clamp(_settings.Current.RemoteSessionVolumePercent, 0, 100);
+        _remoteVolumeInput = new StartupVolumeInput(_pendingRemoteVolume);
     }
 
     private void ResetPendingAliases()
@@ -1315,6 +1419,7 @@ public sealed class WinUiSettingsWindow : Window, IDisposable
     {
         AppSettings current = _settings.Current;
         return _pendingStartWithWindows != current.StartWithWindows ||
+            _pendingAdaptiveRemoteSession != current.AdaptiveRemoteSession ||
             _pendingStartupMode != current.StartupScenarioMode ||
             _pendingStartupScenarioId != current.StartupScenarioId ||
             _pendingTheme != current.Theme ||

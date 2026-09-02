@@ -31,6 +31,7 @@ public sealed class TrayService : IDisposable
     private uint _taskbarCreated;
     private bool _disposed, _menuOpen, _deviceRefreshRunning;
     private string? _lastIconKey;
+    private string? _remoteVolumeEndpointId;
 
     public TrayService(SettingsStore settings, ScenarioService scenarios)
     {
@@ -111,6 +112,7 @@ public sealed class TrayService : IDisposable
                 _dispatcher.TryEnqueue(() =>
                 {
                     if (IsRemoteSession) _scenarios.CancelAudioWait();
+                    _remoteVolumeEndpointId = null;
                     _lastIconKey = null;
                     Refresh();
                     ScheduleDeviceRefresh();
@@ -147,6 +149,7 @@ public sealed class TrayService : IDisposable
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
                 BuildStatusSection(menu, remoteSession: true);
                 TrayNative.AppendMenu(menu, TrayNative.MF_SEPARATOR, 0, null);
+                TrayNative.AppendMenu(menu, TrayNative.MF_STRING, SettingsCommand, UiText.Get(_settings.Current, "Settings"));
             }
             else if (_settings.IsConfigured)
             {
@@ -210,11 +213,16 @@ public sealed class TrayService : IDisposable
             IEnumerable<string> displayIds = remoteSession
                 ? snapshot.Displays.Where(item => item.IsActive).Select(item => item.Id)
                 : selected.DisplayIds;
+            int remoteDisplayCount = displayIds.Count();
+            int remoteDisplayIndex = 0;
             foreach (string id in displayIds)
             {
+                remoteDisplayIndex++;
                 DisplayDevice? device = snapshot.Displays.FirstOrDefault(item => ScenarioPolicy.Same(item.Id, id));
                 ActiveDisplayStatus? display = snapshot.ActiveDisplays.FirstOrDefault(item => ScenarioPolicy.Same(item.Id, id));
-                string name = remoteSession ? UiText.Get(_settings.Current, "RemoteDisplay") :
+                string name = remoteSession
+                    ? remoteDisplayCount > 1 ? $"{UiText.Get(_settings.Current, "RemoteDisplay")} - {remoteDisplayIndex}" : UiText.Get(_settings.Current, "RemoteDisplay")
+                    :
                     ScenarioPolicy.Name(_settings.Current, snapshot, id, english ? "Monitor" : "Монитор");
                 string state = device?.IsAvailable != true ? disconnected : display is null ? unused :
                     $"{display.Width} × {display.Height} · {(remoteSession ? "SDR" : display.HdrEnabled ? "HDR" : "SDR")}";
@@ -228,7 +236,13 @@ public sealed class TrayService : IDisposable
                         UiText.Get(_settings.Current, display.HdrEnabled ? "DisableHdr" : "EnableHdr"));
                     TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_POPUP, (nuint)submenu, text);
                 }
-                else TrayNative.AppendMenu(menu, TrayNative.MF_STRING | TrayNative.MF_GRAYED, 0, text);
+                else
+                {
+                    // SDR is information, not an unavailable device. Keep an active display
+                    // in the normal menu color; it simply has no HDR submenu.
+                    bool activeDisplay = device?.IsAvailable == true && display is not null;
+                    TrayNative.AppendMenu(menu, TrayNative.MF_STRING | (activeDisplay ? 0 : TrayNative.MF_GRAYED), 0, text);
+                }
                 added = true;
             }
 
@@ -244,7 +258,7 @@ public sealed class TrayService : IDisposable
             foreach ((string id, AudioDevice? device) in audioRows)
             {
                 if (!seen.Add(device?.Id ?? id)) continue;
-                string name = remoteSession ? device?.Name ?? id :
+                string name = remoteSession ? UiText.Get(_settings.Current, "RemoteAudio") :
                     ScenarioPolicy.Name(_settings.Current, snapshot, id, device?.DisplayName ?? device?.Name ??
                         (english ? "Audio device" : "Аудиоустройство"));
                 AudioEndpointStatus? audio = device?.IsActive == true && device.IsDefault ? snapshot.DefaultAudio : null;
@@ -387,6 +401,7 @@ public sealed class TrayService : IDisposable
     private void OnSettingsSaved(object? sender, EventArgs args)
     {
         _scenarios.SettingsChanged();
+        _remoteVolumeEndpointId = null;
         // Refresh from the committed settings, regardless of which page saved them.
         // Queue after the save handler so icon-only edits never need an Apply action.
         _dispatcher.TryEnqueue(() =>
@@ -445,7 +460,12 @@ public sealed class TrayService : IDisposable
 
     private async Task RefreshDevicesAsync()
     {
-        if (_disposed || IsRemoteSession || _scenarios.IsApplying) return;
+        if (_disposed || _scenarios.IsApplying) return;
+        if (IsRemoteSession)
+        {
+            ApplyRemoteSessionVolume();
+            return;
+        }
         if (_deviceRefreshRunning) { ScheduleDeviceRefresh(); return; }
         _deviceRefreshRunning = true;
         try
@@ -457,7 +477,23 @@ public sealed class TrayService : IDisposable
         finally { _deviceRefreshRunning = false; }
     }
 
-    private static bool IsRemoteSession => TrayNative.GetSystemMetrics(TrayNative.SM_REMOTESESSION) != 0;
+    private void ApplyRemoteSessionVolume()
+    {
+        try
+        {
+            AppSettings settings = _settings.Current;
+            if (!settings.AdaptiveRemoteSession) return;
+            IReadOnlyList<AudioDevice> endpoints = AudioService.GetRenderDevices();
+            AudioDevice? endpoint = endpoints.FirstOrDefault(item => item.IsActive && item.IsDefault);
+            if (endpoint is null || ScenarioPolicy.Same(endpoint.Id, _remoteVolumeEndpointId)) return;
+            int volume = Math.Clamp(settings.RemoteSessionVolumePercent, 0, 100);
+            AudioService.SetEndpointVolume(endpoint.Id, volume);
+            _remoteVolumeEndpointId = endpoint.Id;
+        }
+        catch (Exception ex) { SettingsStore.Log(ex); }
+    }
+
+    internal static bool IsRemoteSession => TrayNative.GetSystemMetrics(TrayNative.SM_REMOTESESSION) != 0;
 
     internal static string FormatHotKey(HotKeyDefinition? hotKey)
     {

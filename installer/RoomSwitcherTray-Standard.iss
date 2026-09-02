@@ -4,7 +4,7 @@
 #define AppURL "https://github.com/sol669/Cozy-Roomswitch"
 
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.0.3"
 #endif
 
 #ifndef PublishDir

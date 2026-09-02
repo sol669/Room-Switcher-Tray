@@ -77,6 +77,10 @@ public sealed class AppSettings
     // Endpoint IDs replaced by a verified HDMI/DisplayPort successor. They remain
     // in scenario history for compatibility, but are not offered in the device picker.
     public List<string> RetiredAudioDeviceIds { get; set; } = [];
+    // Optional RDP-only behavior. It deliberately has no device bindings and
+    // never appears in the local device-name editor.
+    public bool AdaptiveRemoteSession { get; set; }
+    public int RemoteSessionVolumePercent { get; set; } = 100;
     public AppThemeMode Theme { get; set; }
     public AppLanguage Language { get; set; }
 
