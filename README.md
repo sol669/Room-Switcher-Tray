@@ -2,6 +2,8 @@
 
 [Русский](#русский) · [English](#english)
 
+<p align="center"><img src="docs/images/icon.png" width="180" alt="Cozy Roomswitch icon"></p>
+
 ---
 
 ## Русский
@@ -20,6 +22,16 @@
 - Автозапуск и выбор сценария при входе в Windows.
 - Светлая, тёмная или системная тема; русский и английский языки.
 - Отдельный безопасный режим для удалённого сеанса RDP.
+
+### Скриншоты
+
+<p align="center"><img src="docs/images/settings-general.png" width="520" alt="Основные настройки Cozy Roomswitch"></p>
+
+<p align="center"><img src="docs/images/settings-device-names.png" width="520" alt="Имена устройств Cozy Roomswitch"></p>
+
+<p align="center"><img src="docs/images/scenario-editor.png" width="520" alt="Редактор сценария Cozy Roomswitch"></p>
+
+<p align="center"><img src="docs/images/tray-menu.png" width="360" alt="Меню Cozy Roomswitch в системном трее"></p>
 
 ### Умное поведение при отключённых устройствах
 
